@@ -141,7 +141,7 @@ if __name__ == '__main__':
     # Usage Example
     
     # 1. Initialize Right Hand
-    right_hand = AoyiHand(hand_side='left')
+    right_hand = AoyiHand(hand_side='right')
     
     # 2. Define a gesture (e.g., Fist)
     # [Thumb, Index, Middle, Ring, Little, Rotation]

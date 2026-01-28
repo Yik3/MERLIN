@@ -1,2 +1,4 @@
 __pycache__/Finger_API.cpython-313.pyc
 finger_control_values_1.npy
+*.ipynb
+*.MOV

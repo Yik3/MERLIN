@@ -1,6 +1,6 @@
 import numpy as np
 from Finger_API import *
-import matplotlib.pyplot as plt
+
 # read csv file
 import pandas as pd
 
@@ -22,7 +22,9 @@ def read_and_test_csv(file_path):
     print(df.head())
     
     return df
-def normalize_and_visualize(df):
+def normalize_and_visualize(df,if_plot=False):
+    if if_plot:
+        import matplotlib.pyplot as plt
     normalized_data = {}
     for finger in motor_channel_map.keys():
         # df['CHX'] where X is the channel number
@@ -32,15 +34,17 @@ def normalize_and_visualize(df):
         # Normalize
         norm_data = (data - np.min(data)) / 4096 * 255
         # plot the normalized data
-        plt.plot(norm_data, label=finger)
+        if if_plot:
+            plt.plot(norm_data, label=finger)
         normalized_data[finger] = norm_data
 
-    plt.xlabel('Frame')
-    plt.ylabel('Normalized Position (0-255)')
-    plt.title('Finger Position Normalization')
-    plt.legend()
-    plt.show()
-    
+    if if_plot:
+        plt.xlabel('Frame')
+        plt.ylabel('Normalized Position (0-255)')
+        plt.title('Finger Position Normalization')
+        plt.legend()
+        plt.show()
+
     return normalized_data
 def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
     right_hand = AoyiHand(hand_side='right')
@@ -52,26 +56,46 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
     for i in range(num_frames):
         cur_gest = [0,0,0,0,0,0]
         for finger, norm_data in normalized_data.items():
+            # print(finger, norm_data[i])
             value = norm_data[i] * gain
             if value > 255:
                 value = 255
+            # convert value to int
+            value = int(value)
             if motor_monotonicity[finger] == 1:
-                cur_gest_index = list(motor_channel_map.keys()).index(finger)
-                cur_gest[cur_gest_index] = value
+                if finger == 'Thumb':
+                    cur_gest[0] = value
+                elif finger == 'Index':
+                    cur_gest[1] = value
+                elif finger == 'Middle':
+                    cur_gest[2] = value
+                elif finger == 'Ring':
+                    cur_gest[3] = value
+                elif finger == 'Pinky':
+                    cur_gest[4] = value
             else:
-                cur_gest_index = list(motor_channel_map.keys()).index(finger)
-                cur_gest[cur_gest_index] = 255 - value
+                if finger == 'Thumb':
+                    cur_gest[0] = 255 - value
+                elif finger == 'Index':
+                    cur_gest[1] = 255 - value
+                elif finger == 'Middle':
+                    cur_gest[2] = 255 - value
+                elif finger == 'Ring':
+                    cur_gest[3] = 255 - value
+                elif finger == 'Pinky':
+                    cur_gest[4] = 255 - value
         # If action is too small, just don't do it
         for j in range(len(cur_gest)):
-            if abs(cur_gest[j] - last_gest[j]) < 5:
+            if abs(cur_gest[j] - last_gest[j]) < 100:
                 cur_gest[j] = last_gest[j]
         last_gest = cur_gest
+        print(f"Frame {i+1}/{num_frames}: Setting gesture {cur_gest}")
         right_hand.set_hand_6d(cur_gest)
         time.sleep(1/fps)
     
         
 if __name__ == '__main__':
-    df = read_and_test_csv('indexmiddlepicky.csv')
+    df = read_and_test_csv('pickymiddleindex.csv')
     norm_data = normalize_and_visualize(df)
-    test_finger_with_csv(norm_data, fps=30, gain=1.0)
+    test_finger_with_csv(norm_data, fps=30, gain=5.0)
     

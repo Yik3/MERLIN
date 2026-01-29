@@ -86,7 +86,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
                     cur_gest[4] = 255 - value
         # If action is too small, just don't do it
         for j in range(len(cur_gest)):
-            if abs(cur_gest[j] - last_gest[j]) < 100:
+            if abs(cur_gest[j] - last_gest[j]) < 0:
                 cur_gest[j] = last_gest[j]
         last_gest = cur_gest
         print(f"Frame {i+1}/{num_frames}: Setting gesture {cur_gest}")
@@ -97,5 +97,5 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
 if __name__ == '__main__':
     df = read_and_test_csv('pickymiddleindex.csv')
     norm_data = normalize_and_visualize(df)
-    test_finger_with_csv(norm_data, fps=30, gain=5.0)
+    test_finger_with_csv(norm_data, fps=30, gain=12.0)
     

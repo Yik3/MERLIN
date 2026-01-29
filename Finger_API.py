@@ -146,7 +146,7 @@ if __name__ == '__main__':
     # 2. Define a gesture (e.g., Fist)
     # [Thumb, Index, Middle, Ring, Little, Rotation]
     # All 255 -> Closed fist
-    fist_gesture = [0, 255, 255, 255, 255, 0]
+    fist_gesture = [0, 86, 120, 116, 255, 0]
     
     # 3. Define a gesture (e.g., Open Palm)
     # All 0 -> Open hand
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     # we might need to send the command a few times or use a loop 
     # if the hardware stops moving after a single packet.
     right_hand.set_hand_6d(fist_gesture)
-    time.sleep(1)
+    time.sleep(3)
     
     print("Opening Hand...")
     right_hand.set_hand_6d(open_gesture)

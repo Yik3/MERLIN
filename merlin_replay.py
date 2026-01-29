@@ -13,11 +13,14 @@ range_map = {
     'CH4-Ring': (1830, 2580),
     'CH5-Pinky': (3950, 4010)
 }
-# Monotoniticy Map (1 for large value means close, 0 for large value means open)
+# Monotonicity Map (1 for large value means close, 0 for large value means open)
 motor_monotonicity = {
-    'Index': 1,
-    'Middle': 1,
-    'Pinky': 1
+    'CH0-ThumbLower': 1,
+    'CH1-ThumbUpper': 1,
+    'CH2-Pointer': 1,
+    'CH3-Middle': 1,
+    'CH4-Ring': 1,
+    'CH5-Pinky': 1
 }
 def read_and_test_csv(file_path):
     df = pd.read_csv(file_path)
@@ -64,7 +67,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
             if value > 255:
                 value = 255
             # convert value to int
-            value = np.round(value).astype(int)
+            value = int(np.round(value).astype(int))
             if motor_monotonicity[finger] == 1:
                 if finger == 'CH0-ThumbLower':
                     cur_gest[0] = value
@@ -96,7 +99,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
             if abs(cur_gest[j] - last_gest[j]) < 0:
                 cur_gest[j] = last_gest[j]
         
-        print(f"Frame {i+1}/{num_frames}: Setting gesture {cur_gest}")
+        
         NOT_THUMB = True
         NOT_FOUR = False
         if NOT_THUMB:
@@ -108,6 +111,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
             cur_gest[3] = 0
             cur_gest[4] = 0
         cur_gest[4] = 0  # Disable pinky for testing
+        print(f"Frame {i+1}/{num_frames}: Setting gesture {cur_gest}")
         last_gest = cur_gest
         right_hand.set_hand_6d(cur_gest)
         time.sleep(1/fps)
@@ -115,7 +119,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
         
 if __name__ == '__main__':
     df = read_and_test_csv('Demo1.csv')
-    norm_data = normalize_and_visualize(df, if_plot=True)
-    print(norm_data)
-    # test_finger_with_csv(norm_data, fps=30, gain=12.0)
+    norm_data = normalize_and_visualize(df)
+    # print(norm_data)
+    test_finger_with_csv(norm_data, fps=10, gain=1.0)
     

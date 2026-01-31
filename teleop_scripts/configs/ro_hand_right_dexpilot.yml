@@ -1,0 +1,13 @@
+retargeting:
+  type: DexPilot
+  urdf_path: ro_hand/ro_hand_right.urdf
+
+  # Target refers to the retargeting target, which is the robot hand
+  target_joint_names: [ 'lf_proximal_link', 'if_proximal_link', 'mf_proximal_link', 'rf_proximal_link',
+                        'th_proximal_link', 'th_root_link' ]
+  wrist_link_name: "base_link"
+  finger_tip_link_names: [ "th_tip_link",  "if_tip_link", "mf_tip_link", "rf_tip_link", "lf_tip_link" ]
+  scaling_factor: 1.15
+
+  # A smaller alpha means stronger filtering, i.e. more smooth but also larger latency
+  low_pass_alpha: 0.2

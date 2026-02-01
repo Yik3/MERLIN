@@ -1,10 +1,10 @@
 import time
-import numpy as np
-from scipy.spatial.transform import Rotation as R
-from ctypes import byref, c_int
+import json
+import socket
+import threading
+from ctypes import byref, c_int, c_float
 
-# Import necessary classes from your existing environment
-# Ensure these files are in the python path
+# Import RealMan SDK
 from Robotic_Arm.rm_robot_interface import RoboticArm, rm_thread_mode_e
 from Robotic_Arm.rm_ctypes_wrap import (
     rm_inverse_kinematics_params_t,
@@ -12,14 +12,11 @@ from Robotic_Arm.rm_ctypes_wrap import (
     rm_peripheral_read_write_params_t
 )
 
-# --- Constants from roh_registers_v1.py ---
-# We define them here to avoid direct dependency on the file execution
-ROH_FINGER_POS0_ADDR = 1145    # Start address for finger positions (Read)
-ROH_FINGER_ANGLE0_ADDR = 1165  # Start address for finger angles (Read)
-ROH_NODE_ID = 2                # Default ROHand Node ID
-LEFT_ARM_IP = "169.254.128.18"
-RIGHT_ARM_IP = "169.254.128.19"
-PORT = 8080
+# --- Constants based on roh_registers_v1.py ---
+ROH_NODE_ID = 2
+BASE_ADDR_POS_CURRENT = 1145 # ROH_FINGER_POS0 (Read)
+BASE_ADDR_ANGLE = 1165       # ROH_FINGER_ANGLE0 (Read)
+
 class RobotControlAPI:
     def __init__(self, arm_ip, port=8080):
         """
@@ -29,41 +26,93 @@ class RobotControlAPI:
             arm_ip (str): IP address of the Robotic Arm.
             port (int): Port number (default 8080).
         """
+        self.ip = arm_ip
+        self.port = port
+        
+        # 1. Initialize C-API for Arm Control & Hand Write
+        # Using TRIPLE_MODE as per your original codebase
         self.arm = RoboticArm(rm_thread_mode_e.RM_TRIPLE_MODE_E)
-        handle = self.arm.rm_create_robot_arm(ip=arm_ip, port=port)
+        self.handle = self.arm.rm_create_robot_arm(ip=arm_ip, port=port)
         
-        if handle.id == -1:
-            raise ConnectionError(f"Failed to connect to Robot Arm at {arm_ip}:{port}")
+        if self.handle.id == -1:
+            raise ConnectionError(f"Failed to connect to Robot Arm (C-API) at {arm_ip}:{port}")
         
-        print(f"Connected to Robot Arm: {handle.id}")
+        print(f"Connected to Robot Arm (C-API): {self.handle.id}")
 
-        # Ensure Tool Port (Port 1) is configured for ROHand communication if necessary
-        # Note: rm_set_hand_follow_pos usually handles configuration, 
-        # but reading registers might require specific baudrate settings (defaults to 115200 for ROHand).
+        # 2. Initialize Raw Socket for Hand Reading (Robust method)
+        self.sock = None
+        self._connect_socket()
+
+        # 3. Ensure Port 1 is configured for ModbusRTU (115200 baud)
+        # We use the socket to set this, as it proved successful in your test script
+        self._init_modbus_mode_socket()
+
+    def _connect_socket(self):
+        """Establish a raw socket connection for robust reading."""
+        try:
+            if self.sock:
+                self.sock.close()
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.settimeout(2.0)
+            self.sock.connect((self.ip, self.port))
+            print("Connected to Robot Arm (Raw Socket)")
+        except Exception as e:
+            print(f"Socket connection failed: {e}")
+
+    def _init_modbus_mode_socket(self):
+        """
+        Configure End-Effector Port (Port 1) to ModbusRTU (115200 baud).
+        Command: {"command":"set_modbus_mode","port":1,"baudrate":115200,"timeout":2}
+        """
+        cmd = {
+            "command": "set_modbus_mode",
+            "port": 1,
+            "baudrate": 115200,
+            "timeout": 2
+        }
+        resp = self._send_socket_cmd(cmd)
+        # Simple log to confirm configuration
+        if resp:
+             print(">>> Port 1 Configured to ModbusRTU via Socket")
+
+    def _send_socket_cmd(self, cmd_dict):
+        """Helper to send JSON command via raw socket."""
+        if not self.sock:
+            self._connect_socket()
+        
+        try:
+            cmd_str = json.dumps(cmd_dict) + "\r\n"
+            self.sock.send(cmd_str.encode('utf-8'))
+            data = self.sock.recv(4096).decode('utf-8')
+            return data
+        except (socket.timeout, BrokenPipeError, ConnectionResetError) as e:
+            print(f"Socket Error ({e}), reconnecting...")
+            self._connect_socket()
+            return None
+        except Exception as e:
+            print(f"Unknown Socket Error: {e}")
+            return None
 
     def disconnect(self):
-        """
-        Disconnect the robot arm.
-        """
+        """Clean up connections."""
+        if self.sock:
+            self.sock.close()
         self.arm.rm_delete_robot_arm()
 
     # ------------------------------------------------------------------
-    # 1. Move to specified pose (Arm)
+    # 1. Move to Specified Pose (Arm) - [Original Logic]
     # ------------------------------------------------------------------
     def move_arm_to_pose(self, target_pose, speed=10, block=True):
         """
-        Move the robotic arm to a specified 6D pose.
-        It uses Inverse Kinematics to calculate joint angles and moves the arm.
+        Move the robotic arm to a specified 6D pose using Inverse Kinematics.
 
         Args:
-            target_pose (list[float]): Target pose [x, y, z, qw, qx, qy, qz].
-                                       Position in meters (or mm depending on your config), 
-                                       Rotation in Quaternion (w, x, y, z).
-            speed (int): Movement speed percentage (1-100). Default is 20.
+            target_pose (list[float]): [x, y, z, qw, qx, qy, qz]
+            speed (int): Movement speed percentage (1-100).
             block (bool): If True, wait until movement is complete.
 
         Returns:
-            bool: True if movement command was sent successfully, False otherwise.
+            bool: True if successful, False otherwise.
         """
         # Get current joint angles for IK reference
         ret, current_state = self.arm.rm_get_current_arm_state()
@@ -72,31 +121,44 @@ class RobotControlAPI:
             return False
         
         current_joints = current_state['joint']
-
+        print(f"Current Joints for IK: {current_joints}")
         # Construct IK parameters
-        # Note: Ensure target_pose format matches what rm_inverse_kinematics expects.
-        # Usually [x, y, z, rx, ry, rz] (Euler) or specific quaternion handling.
-        # Based on hand_kinematics_monitor, we rely on the algo interface.
-        
         params = rm_inverse_kinematics_params_t()
-        params.q_in = (c_float * 7)(*current_joints) # Assuming 7 DOF or 6 DOF handles automatically
-        params.q_pose = (c_float * 7)(*target_pose)  # [x, y, z, w, x, y, z]
-        params.flag = 0 # 0 usually implies Quaternion input for this struct in some wrappers
-
+        params.q_in = (c_float * 7)(*current_joints)
+        params.q_pose = (c_float * 7)(*target_pose)
+        params.flag = 0 # Quaternion input
+        
         # Call Inverse Kinematics
         ret_ik, target_joints = self.arm.rm_algo_inverse_kinematics(params)
         
         if ret_ik != 0:
             print(f"Error: Inverse Kinematics failed with error code {ret_ik}")
             return False
-
-        # Execute MoveJ (Joint Move)
-        # block=1 means blocking, block=0 means non-blocking
+        print(f"IK Result Joints: {target_joints}")
+        # Execute MoveJ
         block_flag = 1 if block else 0
         ret_move = self.arm.rm_movej(target_joints, speed, 0, 0, block_flag)
 
         return ret_move == 0
+    def move_arm_to_joints(self, target_joints, speed=10, block=True):
+        """
+        Move the robotic arm to specified joint angles.
 
+        Args:
+            target_joints (list[float]): List of 6 joint angles.
+            speed (int): Movement speed percentage (1-100).
+            block (bool): If True, wait until movement is complete.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        if len(target_joints) != 6:
+            print("Error: target_joints must contain 6 joint angles.")
+            return False
+        block_flag = 1 if block else 0
+        ret_move = self.arm.rm_movej(target_joints, speed, 0, 0, block_flag)
+
+        return ret_move == 0
     # ------------------------------------------------------------------
     # 2. Read current Arm Position
     # ------------------------------------------------------------------
@@ -104,142 +166,170 @@ class RobotControlAPI:
         """
         Read the current end-effector pose of the robotic arm.
 
-        Args:
-            None
-
         Returns:
-            list[float]: Current pose [x, y, z, qw, qx, qy, qz].
-                         Returns None if reading fails.
+            tuple: (current_joints, current_pose)
+                   current_joints: list[float]
+                   current_pose: list[float] [x, y, z, qx, qy, qz]
+            Returns None if reading fails.
         """
-        state_struct = rm_current_arm_state_t()
-        ret = self.arm.handle.contents.rm_get_current_arm_state(self.arm.handle, byref(state_struct))
-
-        if ret == 0:
-            pos = state_struct.pose.position
-            quat = state_struct.pose.quaternion
-            # Return format: [x, y, z, w, x, y, z]
-            return [pos.x, pos.y, pos.z, quat.w, quat.x, quat.y, quat.z]
+        ret, state = self.arm.rm_get_current_arm_state()
+        
+        if ret == 0 and 'joint' in state:
+            current_joints = state['joint']
+            current_pose = state['pose']  # Format: [x, y, z, qx, qy, qz]
+            
+            # Debug prints (Optional, can be removed)
+            # print(f"  Current joints: {current_joints}")
+            # print(f"  Current pose:   {current_pose}")
+            
+            return current_joints, current_pose
         else:
-            print(f"Error: Failed to get arm state. Code: {ret}")
+            print(f"ERROR: Could not read arm state, ret={ret}")
             return None
 
     # ------------------------------------------------------------------
-    # 3. Set current Hand Position
+    # 3. Set current Hand Position - [Original C-API Logic]
     # ------------------------------------------------------------------
     def set_hand_position(self, finger_positions, block=False):
         """
-        Control the ROHand fingers to specific positions.
+        Control the ROHand fingers.
 
         Args:
-            finger_positions (list[int]): List of 6 integers [Thumb, Index, Middle, Ring, Pinky, ThumbRot].
+            finger_positions (list[int]): 6 integers [Thumb, Index, Middle, Ring, Pinky, ThumbRot].
                                           Range: 0 (Open) to 65535 (Closed).
-            block (bool): If True, wait for the hand to reach the position. 
-                          For high-frequency control (teleop), set to False.
+            block (bool): Blocking call if True.
 
         Returns:
-            bool: True if successful, False otherwise.
+            bool: True if successful.
         """
         if len(finger_positions) != 6:
             print("Error: finger_positions must contain 6 integers.")
             return False
 
-        # Ensure inputs are integers
         positions = [int(p) for p in finger_positions]
 
-        # Use the built-in interface for hand control
-        # This writes to ROH_FINGER_POS_TARGETx registers internally
+        # Use C-API for writing (this worked in your original code)
         ret = self.arm.rm_set_hand_follow_pos(positions, block)
 
         return ret == 0
 
     # ------------------------------------------------------------------
-    # 4. Read current Hand States
+    # 4. Read current Hand States - [New Socket Logic]
     # ------------------------------------------------------------------
     def get_hand_state(self, read_type='pos'):
         """
-        Read the current state (Position or Angle) of the ROHand fingers via Modbus.
+        Read ROHand state using Raw Socket (Robust Method).
+        Iterates 6 times to read each register individually, mimicking try_socket_read.py.
 
         Args:
-            read_type (str): 'pos' to read raw positions (0-65535).
-                             'angle' to read angles (scaled by 100).
+            read_type (str): 'pos' (0-65535) or 'angle' (float deg).
 
         Returns:
-            list[int]: List of 6 values corresponding to [Thumb, Index, Middle, Ring, Pinky, ThumbRot].
-                       Returns None if Modbus read fails.
+            list: 6 values corresponding to fingers. Returns None on failure.
         """
-        # Determine Register Address based on roh_registers_v1.py
+        results = []
+        
         if read_type == 'pos':
-            start_address = ROH_FINGER_POS0_ADDR  # 1145
+            base_addr = BASE_ADDR_POS_CURRENT # 1145
         elif read_type == 'angle':
-            start_address = ROH_FINGER_ANGLE0_ADDR # 1165
+            base_addr = BASE_ADDR_ANGLE       # 1165
         else:
             print("Error: read_type must be 'pos' or 'angle'")
             return None
 
-        # Configure Modbus Read Parameters
-        params = rm_peripheral_read_write_params_t()
-        params.port = 1              # Port 1 is the End-Effector/Tool Port
-        params.address = start_address
-        params.num = 6               # We want to read 6 fingers
-        params.device_address = ROH_NODE_ID # ID 2
-
-        # Execute Read
-        # rm_read_multiple_holding_registers returns (ret_code, list_of_ints)
-        ret, data = self.arm.rm_read_multiple_holding_registers(params)
-
-        if ret == 0 and len(data) == 6:
-            return data
-        else:
-            print(f"Error: Failed to read hand registers. Code: {ret}")
-            return None
+        # Loop 6 times to read each finger individually
+        for i in range(6):
+            addr = base_addr + i
+            
+            # Construct JSON command exactly like try_socket_read.py
+            cmd = {
+                "command": "read_holding_registers",
+                "port": 1,
+                "address": addr,
+                "num": 1,        # Important: Read 1 by 1
+                "device": ROH_NODE_ID
+            }
+            
+            resp_str = self._send_socket_cmd(cmd)
+            
+            if not resp_str:
+                return None
+                
+            try:
+                # Parse JSON response
+                # Example response: {"command":"read_holding_registers","data":[123],"ret":0}
+                data_json = json.loads(resp_str)
+                
+                # Validation
+                if "data" not in data_json:
+                    # print(f"[Socket] No data in response: {resp_str}")
+                    return None
+                    
+                val_list = data_json["data"]
+                # Handle cases where data might be a list or a single int
+                val = val_list[0] if isinstance(val_list, list) else int(val_list)
+                
+                if read_type == 'angle':
+                    # Handle int16 complement for angles
+                    if val > 32767: 
+                        val -= 65536
+                    results.append(val / 100.0)
+                else:
+                    results.append(val)
+                    
+            except Exception as e:
+                print(f"[Socket] JSON Parsing Exception: {e} | Raw: {resp_str}")
+                return None
+                
+            # Tiny sleep to prevents overloading the gateway (from your script)
+            # time.sleep(0.01) 
+            
+        return results
 
 
 # --- Example Usage ---
 if __name__ == "__main__":
     # Configuration
-    IP = "192.168.1.18" # Change to your Robot IP
+    IP = "169.254.128.19" # Right Arm IP
     
     try:
         # 1. Initialize
+        print("Initializing Robot API...")
         robot = RobotControlAPI(IP)
 
-        # 2. Read Arm Pose
-        current_pose = robot.get_current_arm_pose()
-        print(f"Current Arm Pose: {current_pose}")
+        # 2. Read Arm Pose (Using updated method)
+        print("\n--- Reading Arm Pose ---")
+        arm_data = robot.get_current_arm_pose()
+        if arm_data:
+            joints, pose = arm_data
+            print(f"Joints: {joints}")
+            print(f"Pose:   {pose}")
 
-        # 3. Read Hand State (Raw Position)
+        # 3. Read Hand State (Using Socket)
+        print("\n--- Reading Hand State ---")
         hand_pos = robot.get_hand_state('pos')
-        print(f"Current Hand Positions: {hand_pos}")
+        print(f"Hand Positions: {hand_pos}")
 
-        # 4. Read Hand State (Angle)
         hand_angle = robot.get_hand_state('angle')
-        if hand_angle:
-            # Convert scaled int to float degrees: value / 100.0
-            # Handle negative values for angles > 32768 (as per README logic)
-            real_angles = []
-            for a in hand_angle:
-                val = a - 65536 if a > 32768 else a
-                real_angles.append(val / 100.0)
-            print(f"Current Hand Angles (deg): {real_angles}")
+        print(f"Hand Angles:    {hand_angle}")
 
-        # 5. Set Hand Position (Close Hand slightly)
-        # 30000 is roughly half closed (Max 65535)
-        target_hand = [30000, 30000, 30000, 30000, 30000, 0] 
-        robot.set_hand_position(target_hand)
-        time.sleep(1)
+        # 4. Set Hand Position (Using C-API)
 
-        # 6. Move Arm (Small Offset Example - BE CAREFUL)
-        if current_pose:
-            # Move Z up by 1cm (0.01m)
-            target_pose = list(current_pose)
-            target_pose[2] += 0.01 
-            print("Moving arm up...")
-            # robot.move_arm_to_pose(target_pose) # Uncomment to execute
+        print("\n--- Setting Hand Position ---")
+        target = [0, 0, 0, 0, 0, 0]
+        success = robot.set_hand_position(target)
+        print(f"Command Sent: {success}")
+
+        # 5. Move Arm to Pose
+        print("\n--- Moving Arm to Pose ---")
+        target_pose = [-0.084126, -0.484436, 0.190699, -1.779, -0.942, -2.887]
+        success = robot.move_arm_to_pose(target_pose)
+        print(f"Move Command Sent: {success}")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Main Error: {e}")
     finally:
-        # Cleanup
         if 'robot' in locals():
             robot.disconnect()
             RoboticArm.rm_destroy()
+

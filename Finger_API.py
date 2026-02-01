@@ -160,5 +160,5 @@ if __name__ == '__main__':
     time.sleep(3)
     
     print("Opening Hand...")
-    right_hand.set_hand_6d(open_gesture)
+    # right_hand.set_hand_6d(open_gesture)
     time.sleep(1)

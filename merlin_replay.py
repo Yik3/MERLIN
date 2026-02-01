@@ -1,9 +1,10 @@
 import numpy as np
-from Finger_API import *
+from Total_API import *
 
 # read csv file
 import pandas as pd
-
+MAX_VAL = 65535
+RIGHT_ARM_IP = '169.254.128.19'
 # Global Dictionary mapping finger to channel
 range_map = {
     'CH0-ThumbLower': (1152, 2560),
@@ -38,7 +39,7 @@ def normalize_and_visualize(df,if_plot=False):
         data = df[col_name].values
         # Normalize
         min_val, max_val = range_map[finger]
-        norm_data = (data - min_val) / (max_val - min_val) * 255
+        norm_data = (data - min_val) / (max_val - min_val) * MAX_VAL
         # plot the normalized data
         if if_plot:
             plt.plot(norm_data, label=finger)
@@ -53,10 +54,11 @@ def normalize_and_visualize(df,if_plot=False):
 
     return normalized_data
 def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
-    right_hand = AoyiHand(hand_side='right')
+    print("Initializing Robot API...")
+    right_hand = RobotControlAPI(RIGHT_ARM_IP)
     fist_gesture = [0, 0, 0, 0, 0, 0]
-    right_hand.set_hand_6d(fist_gesture)
-    time.sleep(1)
+    right_hand.set_hand_position(fist_gesture)
+    time.sleep(3)
     num_frames = len(next(iter(normalized_data.values())))
     last_gest = [0,0,0,0,0,0]
     for i in range(num_frames):
@@ -64,8 +66,8 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
         for finger, norm_data in normalized_data.items():
             # print(finger, norm_data[i])
             value = norm_data[i] * gain
-            if value > 255:
-                value = 255
+            if value > MAX_VAL:
+                value = MAX_VAL
             # convert value to int
             value = int(np.round(value).astype(int))
             if motor_monotonicity[finger] == 1:
@@ -83,24 +85,19 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
                     cur_gest[4] = value
             else:
                 if finger == 'CH0-ThumbLower':
-                    cur_gest[0] = 255 - value
+                    cur_gest[0] = MAX_VAL - value
                 elif finger == 'CH1-ThumbUpper':
-                    cur_gest[5] = 255 - value
+                    cur_gest[5] = MAX_VAL - value
                 elif finger == 'CH2-Pointer':
-                    cur_gest[1] = 255 - value
+                    cur_gest[1] = MAX_VAL - value
                 elif finger == 'CH3-Middle':
-                    cur_gest[2] = 255 - value
+                    cur_gest[2] = MAX_VAL - value
                 elif finger == 'CH4-Ring':
-                    cur_gest[3] = 255 - value
+                    cur_gest[3] = MAX_VAL - value
                 elif finger == 'CH5-Pinky':
-                    cur_gest[4] = 255 - value
-        # If action is too small, just don't do it
-        for j in range(len(cur_gest)):
-            if abs(cur_gest[j] - last_gest[j]) < 0:
-                cur_gest[j] = last_gest[j]
-        
-        
-        NOT_THUMB = True
+                    cur_gest[4] = MAX_VAL - value
+        # For testing, disable some fingers
+        NOT_THUMB = False
         NOT_FOUR = False
         if NOT_THUMB:
             cur_gest[0] = 0
@@ -113,7 +110,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
         cur_gest[4] = 0  # Disable pinky for testing
         print(f"Frame {i+1}/{num_frames}: Setting gesture {cur_gest}")
         last_gest = cur_gest
-        right_hand.set_hand_6d(cur_gest)
+        right_hand.set_hand_position(cur_gest)
         time.sleep(1/fps)
     
         
@@ -121,5 +118,5 @@ if __name__ == '__main__':
     df = read_and_test_csv('Demo1.csv')
     norm_data = normalize_and_visualize(df)
     # print(norm_data)
-    test_finger_with_csv(norm_data, fps=10, gain=1.0)
+    test_finger_with_csv(norm_data, fps=30, gain=1.0)
     

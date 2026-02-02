@@ -9,8 +9,28 @@ from Robotic_Arm.rm_robot_interface import RoboticArm, rm_thread_mode_e
 from Robotic_Arm.rm_ctypes_wrap import (
     rm_inverse_kinematics_params_t,
     rm_current_arm_state_t,
-    rm_peripheral_read_write_params_t
+    rm_peripheral_read_write_params_t,
+    rm_pose_t
 )
+from scipy.spatial.transform import Rotation as R
+
+def convert_6d_to_7d(pose_6d):
+    """
+    6D Pose to 7D Pose Conversion for RealMan Inverse Kinematics.
+    Input:  [x, y, z, rx, ry, rz] (Euler angles in radians)
+    Output: [x, y, z, qw, qx, qy, qz] (RealMan inverse kinematics format)
+    """
+    # 1. Extract position and Euler angles
+    pos = pose_6d[:3]   # [x, y, z]
+    euler = pose_6d[3:] # [rx, ry, rz]
+
+    # 2. Convert Euler angles to quaternion
+    # Note: RealMan typically uses 'xyz' order for Euler angles
+    r = R.from_euler('xyz', euler, degrees=False)
+    quat = r.as_quat() 
+    pose_7d = [pos[0], pos[1], pos[2], quat[3], quat[0], quat[1], quat[2]]
+    
+    return pose_7d
 
 # --- Constants based on roh_registers_v1.py ---
 ROH_NODE_ID = 2
@@ -105,41 +125,66 @@ class RobotControlAPI:
     def move_arm_to_pose(self, target_pose, speed=10, block=True):
         """
         Move the robotic arm to a specified 6D pose using Inverse Kinematics.
-
-        Args:
-            target_pose (list[float]): [x, y, z, qw, qx, qy, qz]
-            speed (int): Movement speed percentage (1-100).
-            block (bool): If True, wait until movement is complete.
-
-        Returns:
-            bool: True if successful, False otherwise.
+        Fixed to use rm_pose_t struct instead of float array.
         """
-        # Get current joint angles for IK reference
+        # 1. 统一转换为 7D 数据 [x, y, z, w, x, y, z]
+        if len(target_pose) == 6:
+            target_pose_7d = convert_6d_to_7d(target_pose)
+        elif len(target_pose) == 7:
+            target_pose_7d = target_pose
+        else:
+            print("Error: Target pose must be 6D or 7D")
+            return False
+
+        # 2. 获取当前关节角作为逆解初值
         ret, current_state = self.arm.rm_get_current_arm_state()
         if ret != 0:
             print("Error: Failed to get current arm state for IK.")
             return False
         
         current_joints = current_state['joint']
-        print(f"Current Joints for IK: {current_joints}")
-        # Construct IK parameters
+        
+        # 3. 构造逆解参数 (Struct Construction)
         params = rm_inverse_kinematics_params_t()
         params.q_in = (c_float * 7)(*current_joints)
-        params.q_pose = (c_float * 7)(*target_pose)
-        params.flag = 0 # Quaternion input
         
-        # Call Inverse Kinematics
+        # [FIX START] --------------------------------------------
+        # 不能直接赋值数组，必须构造 rm_pose_t 结构体
+        pose_struct = rm_pose_t()
+        
+        # 填充 Position (x, y, z)
+        pose_struct.position.x = target_pose_7d[0]
+        pose_struct.position.y = target_pose_7d[1]
+        pose_struct.position.z = target_pose_7d[2]
+        
+        # 填充 Quaternion (w, x, y, z)
+        # 注意: target_pose_7d 格式为 [x, y, z, w, x, y, z]
+        pose_struct.quaternion.w = target_pose_7d[3]
+        pose_struct.quaternion.x = target_pose_7d[4]
+        pose_struct.quaternion.y = target_pose_7d[5]
+        pose_struct.quaternion.z = target_pose_7d[6]
+        
+        # 将构造好的结构体赋值给参数
+        params.q_pose = pose_struct
+        # [FIX END] ----------------------------------------------
+
+        params.flag = 0 # 0 代表输入的是四元数 (Quaternion)
+       
+        # 4. 调用逆解
         ret_ik, target_joints = self.arm.rm_algo_inverse_kinematics(params)
-        
+       
         if ret_ik != 0:
             print(f"Error: Inverse Kinematics failed with error code {ret_ik}")
             return False
-        print(f"IK Result Joints: {target_joints}")
-        # Execute MoveJ
+            
+        print(f"IK Result Joints: {list(target_joints)}")
+
+        # 5. 执行运动
         block_flag = 1 if block else 0
         ret_move = self.arm.rm_movej(target_joints, speed, 0, 0, block_flag)
 
         return ret_move == 0
+
     def move_arm_to_joints(self, target_joints, speed=10, block=True):
         """
         Move the robotic arm to specified joint angles.
@@ -322,7 +367,7 @@ if __name__ == "__main__":
 
         # 5. Move Arm to Pose
         print("\n--- Moving Arm to Pose ---")
-        target_pose = [-0.084126, -0.484436, 0.190699, -1.779, -0.942, -2.887]
+        target_pose = [-0.080309, -0.4453, 0.172321, -1.564, -1.163, -3.129]
         success = robot.move_arm_to_pose(target_pose)
         print(f"Move Command Sent: {success}")
 

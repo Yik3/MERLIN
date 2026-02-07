@@ -16,7 +16,7 @@ range_map = {
     'CH2-Pointer': (1780, 2730),
     'CH3-Middle': (1700, 2630),
     'CH4-Ring': (1830, 2580),
-    'CH5-Pinky': (1800, 2500) # TODO: re calibrate pinky
+    'CH5-Pinky': (1900, 2500) # TODO: re calibrate pinky
 }
 # Monotonicity Map (1 for large value means close, 0 for large value means open)
 motor_monotonicity = {
@@ -103,7 +103,7 @@ def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=
 def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
     print("Initializing Robot API...")
     right_hand = RobotControlAPI(RIGHT_ARM_IP)
-    fist_gesture = [0, 0, 0, 0, 0, 0]
+    fist_gesture = [0, 0, 0, 0, 0, MAX_VAL-5000]
     right_hand.set_hand_position(fist_gesture)
     time.sleep(3)
     num_frames = len(next(iter(normalized_data.values())))
@@ -118,9 +118,9 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
             # convert value to int
             value = int(np.round(value).astype(int))
             if motor_monotonicity[finger] == 1:
-                if finger == 'CH0-ThumbLower':
+                if finger == 'CH0-ThumbLow':
                     cur_gest[0] = value
-                elif finger == 'CH1-ThumbUpper':
+                elif finger == 'CH1-ThumbUp':
                     cur_gest[5] = value
                 elif finger == 'CH2-Pointer':
                     cur_gest[1] = value
@@ -131,9 +131,9 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
                 elif finger == 'CH5-Pinky':
                     cur_gest[4] = value
             else:
-                if finger == 'CH0-ThumbLower':
+                if finger == 'CH0-ThumbLow':
                     cur_gest[0] = MAX_VAL - value
-                elif finger == 'CH1-ThumbUpper':
+                elif finger == 'CH1-ThumbUp':
                     cur_gest[5] = MAX_VAL - value
                 elif finger == 'CH2-Pointer':
                     cur_gest[1] = MAX_VAL - value
@@ -163,7 +163,7 @@ def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
         
 if __name__ == '__main__':
     df = read_and_test_csv('adc_data_20260205193055.csv')
-    norm_data = normalize_and_visualize(df, if_plot=True)
+    norm_data = normalize_and_visualize(df, if_plot=False)
     # print(norm_data)
-    # test_finger_with_csv(norm_data, fps=30, gain=1.0)
+    test_finger_with_csv(norm_data, fps=10, gain=1.0)
     

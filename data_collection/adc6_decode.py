@@ -44,7 +44,7 @@ def run_logger():
                     
                     now = datetime.now(TARGET_TZ)
                     
-                    timestamp_str = now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + now.strftime("%z")
+                    timestamp_str = time.time() #now.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + now.strftime("%z")
                     
                     print_time = now.strftime("%H:%M:%S.%f")[:-3]
                     print(f"[{print_time}] | {adc_values[0]:4d}   {adc_values[1]:4d}   {adc_values[2]:4d}   {adc_values[3]:4d}   {adc_values[4]:4d}   {adc_values[5]:4d}")

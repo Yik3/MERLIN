@@ -6,6 +6,10 @@ import pandas as pd
 MAX_VAL = 65535
 RIGHT_ARM_IP = '169.254.128.19'
 # Global Dictionary mapping finger to channel
+from scipy.signal import butter, filtfilt
+
+RAW_FREQ = 990   
+TARGET_FREQ = 30
 range_map = {
     'CH0-ThumbLow': (1152, 2560),
     'CH1-ThumbUp': (1400, 2083),
@@ -23,27 +27,70 @@ motor_monotonicity = {
     'CH4-Ring': 1,
     'CH5-Pinky': 1
 }
+def butter_lowpass_filter(data, cutoff, fs, order=2):
+    """
+    cutoff: Cut off freq(Hz). Small->smooth, but high latency. Recommended values 2-5
+    fs: FPS of the data. For 30 FPS, fs=30
+    order: default to 2.
+    """
+    nyq = 0.5 * fs # Nyquist Frequency
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    y = filtfilt(b, a, data)
+    return y
+
+def downsample_average(data, original_freq, target_freq):
+    """
+    Downsample the data from original_freq to target_freq by averaging.
+    data: 1D numpy array of the original data
+    """
+    if target_freq >= original_freq:
+        return data 
+
+    step = int(original_freq / target_freq)
+    
+    n_samples = len(data)
+    trunc_len = (n_samples // step) * step
+
+    truncated_data = data[:trunc_len]
+
+    downsampled_data = truncated_data.reshape(-1, step).mean(axis=1)
+    
+    print(f"Downsampling: {n_samples} -> {len(downsampled_data)} frames (Window size: {step})")
+    return downsampled_data
+
 def read_and_test_csv(file_path):
     df = pd.read_csv(file_path)
     print("Loaded data shape:", df.shape)
     print(df.head())
     
     return df
-def normalize_and_visualize(df,if_plot=False):
+def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=30):
     if if_plot:
         import matplotlib.pyplot as plt
     normalized_data = {}
     for finger in range_map.keys():
         # df['CHX'] where X is the channel number
         col_name = finger
-        data = df[col_name].values
+        raw_data = df[col_name].values
+        # Pass to filter
+        if enable_filter:
+            # Nah dealing
+            if np.isnan(raw_data).any():
+                raw_data = pd.Series(raw_data).fillna(method='ffill').fillna(0).values
+            
+            filtered_data = butter_lowpass_filter(raw_data, cutoff=cutoff, fs=fs)
+        else:
+            filtered_data = raw_data
         # Normalize
         min_val, max_val = range_map[finger]
-        norm_data = (data - min_val) * MAX_VAL / (max_val - min_val) 
+        norm_data = (filtered_data - min_val) * MAX_VAL / (max_val - min_val) 
+        
+        final_data = downsample_average(norm_data, RAW_FREQ, TARGET_FREQ)       
+        normalized_data[finger] = final_data
         # plot the normalized data
         if if_plot:
-            plt.plot(norm_data, label=finger)
-        normalized_data[finger] = norm_data
+            plt.plot(final_data, label=finger)
 
     if if_plot:
         plt.xlabel('Frame')

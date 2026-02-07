@@ -3,7 +3,7 @@ import json
 import socket
 import threading
 from ctypes import byref, c_int, c_float
-
+MAX_VAL = 65535
 # Import RealMan SDK
 from Robotic_Arm.rm_robot_interface import RoboticArm, rm_thread_mode_e
 from Robotic_Arm.rm_ctypes_wrap import (
@@ -350,14 +350,6 @@ if __name__ == "__main__":
             print(f"Joints: {joints}")
             print(f"Pose:   {pose}")
 
-        # 3. Read Hand State (Using Socket)
-        print("\n--- Reading Hand State ---")
-        hand_pos = robot.get_hand_state('pos')
-        print(f"Hand Positions: {hand_pos}")
-
-        hand_angle = robot.get_hand_state('angle')
-        print(f"Hand Angles:    {hand_angle}")
-
         # 4. Set Hand Position (Using C-API)
 
         print("\n--- Setting Hand Position ---")
@@ -367,7 +359,7 @@ if __name__ == "__main__":
 
         # 5. Move Arm to Pose
         print("\n--- Moving Arm to Pose ---")
-        target_pose = [-0.080309, -0.4453, 0.172321, -1.564, -1.163, -3.129]
+        target_pose = [-0.214602, -0.566954, 0.227518, 1.735, -1.044, -0.119]
         success = robot.move_arm_to_pose(target_pose)
         print(f"Move Command Sent: {success}")
 

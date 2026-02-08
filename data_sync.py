@@ -96,7 +96,7 @@ def sync_data(npy_path, csv_path, txt_path):
             pose_val = txt_data[idx_txt]
             
             # 3. 存入结果
-            results.append((i_cam, encoder_avg, pose_val))
+            results.append((i_cam, idx_csv, pose_val))
             
         else:
             dropped_count += 1

@@ -65,7 +65,7 @@ def read_and_test_csv(file_path):
     print(df.head())
     
     return df
-def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=30):
+def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=30, downsample = True):
     if if_plot:
         import matplotlib.pyplot as plt
     normalized_data = {}
@@ -86,11 +86,14 @@ def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=
         min_val, max_val = range_map[finger]
         norm_data = (filtered_data - min_val) * MAX_VAL / (max_val - min_val) 
         
-        final_data = downsample_average(norm_data, RAW_FREQ, TARGET_FREQ)       
-        normalized_data[finger] = final_data
+        final_data = downsample_average(norm_data, RAW_FREQ, TARGET_FREQ) 
+        if downsample:      
+            normalized_data[finger] = final_data
+        else:
+            normalized_data[finger] = norm_data
         # plot the normalized data
         if if_plot:
-            plt.plot(final_data, label=finger)
+            plt.plot(normalized_data[finger], label=finger)
 
     if if_plot:
         plt.xlabel('Frame')

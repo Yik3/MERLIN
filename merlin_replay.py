@@ -11,12 +11,12 @@ from scipy.signal import butter, filtfilt
 RAW_FREQ = 990   
 TARGET_FREQ = 30
 range_map = {
-    'CH0-ThumbLow': (1152, 2560),
-    'CH1-ThumbUp': (1400, 2083),
-    'CH2-Pointer': (1780, 2730),
-    'CH3-Middle': (1700, 2630),
-    'CH4-Ring': (1830, 2580),
-    'CH5-Pinky': (1900, 2500) # TODO: re calibrate pinky
+    'CH0-ThumbLow': (1286, 2400),
+    'CH1-ThumbUp': (1413, 1840),
+    'CH2-Pointer': (2074, 2883),
+    'CH3-Middle': (1902, 2742),
+    'CH4-Ring': (1750, 2580),
+    'CH5-Pinky': (1970, 2667) 
 }
 # Monotonicity Map (1 for large value means close, 0 for large value means open)
 motor_monotonicity = {
@@ -106,7 +106,7 @@ def normalize_and_visualize(df,if_plot=False,enable_filter=True, cutoff=0.6, fs=
 def test_finger_with_csv(normalized_data, fps=30, gain=1.0):
     print("Initializing Robot API...")
     right_hand = RobotControlAPI(RIGHT_ARM_IP)
-    fist_gesture = [0, 0, 0, 0, 0, MAX_VAL-5000]
+    fist_gesture = [0, 0, 0, 0, 0, 0]
     right_hand.set_hand_position(fist_gesture)
     time.sleep(3)
     num_frames = len(next(iter(normalized_data.values())))

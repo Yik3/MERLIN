@@ -10,7 +10,7 @@ camera_path = '/home/rm/Documents/MERLIN/video_recording_realsense#2026020519305
 fist_gesture = [0, 0, 0, 0, 0, MAX_VAL-5000]
 IP = '169.254.128.19' 
 FPS = 30
-gain = 0.95
+gain = 1.0
 
 data = sync_data(camera_path, encoder_path, pose_path)
 df = read_and_test_csv(encoder_path)

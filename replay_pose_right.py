@@ -15,7 +15,7 @@ def transform_frame_z90(x,y,z, rx, ry, rz):
     ret_y = -x
     ret_z = z
     ret_rx = ry
-    ret_ry = rx
+    ret_ry = -rx
     ret_rz = rz
     return [ret_x, ret_y, ret_z, ret_rx, ret_ry, ret_rz]
 

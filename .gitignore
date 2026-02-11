@@ -4,3 +4,11 @@ finger_control_values_1.npy
 *.MOV
 __pycache__/Finger_API.cpython-311.pyc
 /__pycache__
+
+data/
+
+weights/
+*.npz
+sanity_results/
+*.pyc
+__pycache__/

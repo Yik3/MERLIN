@@ -31,7 +31,7 @@ SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/syncs'
 # ARGUMENTS
 # ===========================================================================
 parser = argparse.ArgumentParser(description="MERLIN Single-Cam 12D Training")
-parser.add_argument('-e', '--epochs', type=int, default=15000, help='number of epochs')
+parser.add_argument('-e', '--epochs', type=int, default=20000, help='number of epochs')
 parser.add_argument('-b', '--batch', type=int, default=6, help='batch size') # 显存够的话可以大一点
 parser.add_argument('-n', '--norm_path', type=str, default="normalization_stats_12d.npz", help='stats save path')
 parser.add_argument('-q', '--num_queries', type=int, default=70, help='chunk size')
@@ -194,7 +194,7 @@ for epoch in range(args.epochs):
     
     # --- SAVE ---
     # 每 500 epoch 或在最后几个 epoch 频繁保存
-    if (epoch + 1) % 1000 == 0 and epoch < args.epochs - 7000:
+    if (epoch + 1) % 1000 == 0 and epoch > args.epochs - 8000:
         save_path = f"weights/policy_epoch_{epoch+1}.pth"
         torch.save(model.state_dict(), save_path)
 
@@ -205,6 +205,8 @@ print("Training Complete. Weights saved.")
 # Plot Loss
 plt.figure()
 plt.plot(loss_history, label='Train L1')
+# Only display values that are smaller than 2
+plt.ylim(0, 1)
 plt.title('Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')

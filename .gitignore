@@ -12,3 +12,5 @@ weights/
 sanity_results/
 *.pyc
 __pycache__/
+replay_results/
+*.png

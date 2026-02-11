@@ -101,8 +101,8 @@ def sync_data(npy_path, csv_path, txt_path):
         else:
             dropped_count += 1
             # 可选：打印为什么丢弃 (方便调试)
-            # if dropped_count <= 10: # 只打印前10个错误
-            #     print(f"Frame {i_cam} dropped. Diff CSV: {diff_csv/1e9:.4f}s, Diff TXT: {diff_txt/1e9:.4f}s")
+        
+            print(f"Frame {i_cam} dropped. Diff CSV: {diff_csv/1e9:.4f}s, Diff TXT: {diff_txt/1e9:.4f}s")
 
     print(f"Sync Complete.")
     print(f"Total Video Frames: {len(master_times)}")
@@ -114,9 +114,9 @@ def sync_data(npy_path, csv_path, txt_path):
 # --- 测试代码 ---
 if __name__ == "__main__":
     # 请替换为你实际的路径
-    npy_path = 'video_recording_realsense#20260205193056.npy' 
-    csv_path = 'adc_data_20260205193055.csv'
-    txt_path = 'iphone_data_20260205_193047.txt'
+    npy_path = 'video_recording_realsense#20260205193400.npy' 
+    csv_path = 'adc_data_20260205193359.csv'
+    txt_path = 'iphone_data_20260205_193353.txt'
     
     data = sync_data(npy_path, csv_path, txt_path)
     # 打印前5条结果示例

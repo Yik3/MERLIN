@@ -7,8 +7,8 @@ from Total_API import RobotControlAPI
 # ================= CONFIGURATION =================
 ROBOT_IP = "169.254.128.19"
 ZMQ_PORT = 5555
-BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
-
+# BASE_POSE = [-0.259968, -0.253127, 0.265704, 1.89, -0.996, -0.185]
+BASE_POSE = [-0.259968, -0.253127, 0.255704, 2.05, -0.896, -0.185]
 # 手部映射参数
 MAX_HAND_VAL = 65535
 range_map = {
@@ -21,7 +21,7 @@ range_map = {
 }
 
 # ================= HELPER FUNCTIONS =================
-def map_encoder_to_motor(encoder_vals, gain=0.83):
+def map_encoder_to_motor(encoder_vals, gain=1.0):
     """
     将模型预测的 Encoder 数值映射为电机控制信号
     包含特定的通道重排逻辑
@@ -94,6 +94,9 @@ def main():
             
             # --- C. Execute Command (Blocking) ---
             # 移动机械手
+            cmd_hand[0] -= 5000 
+            if cmd_hand[0] < 0:
+                cmd_hand[0] = 0
             robot.set_hand_position(cmd_hand)
             # 移动机械臂 (Block直到完成)
             robot.move_arm_to_pose(next_target_pose, speed=20, block=True)

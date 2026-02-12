@@ -88,7 +88,7 @@ def main():
     curr_qpos_norm = (raw_qpos_init - qpos_mean) / qpos_std
     
     past_predictions_buffer = collections.deque(maxlen=K_AGGREGATION)
-    exp_weight_k = 0.01 
+    exp_weight_k = 0.05
 
     print("\n=== STARTING SYNCHRONOUS INFERENCE LOOP ===")
     

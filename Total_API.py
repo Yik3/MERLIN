@@ -353,15 +353,15 @@ if __name__ == "__main__":
         # 4. Set Hand Position (Using C-API)
 
         print("\n--- Setting Hand Position ---")
-        target = [0, 0, 0, 0, 0, 0]
+        target = [0, 0, 0, 0, 0, MAX_VAL-5000]
         success = robot.set_hand_position(target)
         print(f"Command Sent: {success}")
 
-        # # 5. Move Arm to Pose
-        # print("\n--- Moving Arm to Pose ---")
-        # target_pose = [-0.214602, -0.566954, 0.227518, 1.735, -1.044, -0.119]
-        # success = robot.move_arm_to_pose(target_pose)
-        # print(f"Move Command Sent: {success}")
+        # 5. Move Arm to Pose
+        print("\n--- Moving Arm to Pose ---")
+        target_pose = [-0.259968, -0.253127, 0.305704, 2.35, -0.696, -0.185]
+        success = robot.move_arm_to_pose(target_pose)
+        print(f"Move Command Sent: {success}")
 
     except Exception as e:
         print(f"Main Error: {e}")

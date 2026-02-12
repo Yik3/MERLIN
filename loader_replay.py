@@ -7,14 +7,21 @@ from Safety_Constraint import *
 
 # ================= CONFIGURATION =================
 # 请替换为你的实际文件路径
-ENC_NPY = '/home/rm/Documents/MERLIN/data/210data/encoder/processed_encoder/adc_data_20260210234340.npy'
-ACT_NPY = '/home/rm/Documents/MERLIN/data/210data/action/processed_action/iphone_data_20260210_234313.npy'
-SYNC_NPZ = '/home/rm/Documents/MERLIN/data/210data/sync/video_recording_realsense#20260210234343_sync.npz'
-
+ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260210234340.npy'
+ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260210_234313.npy'
+SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260210234343_sync.npz'
+range_map = {
+    'CH0': (1286, 2400),
+    'CH1': (1413, 1840),
+    'CH2': (1900, 2883),
+    'CH3': (1902, 2742),
+    'CH4': (1750, 2700),
+    'CH5': (1970, 2667) 
+}
 IP = '169.254.128.19'
-ENABLE_ROBOT = False  # Set to True to actually move the robot
+ENABLE_ROBOT = True  # Set to True to actually move the robot
 FPS = 30
-BASE_POSE = [-0.196845, -0.328856, 0.042091, 1.517, -1.19, 0.07]
+BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
 # =================================================
 
 def smooth_data(data, window=8):
@@ -29,6 +36,20 @@ def smooth_data(data, window=8):
         moving_sum = ret[kernel_size - 1 : kernel_size - 1 + len(data)]
         smoothed[:, dim] = moving_sum / kernel_size
     return smoothed
+
+def map_encoder_to_motor(encoder_vals, gain = 0.83):
+    motor_vals = []
+    for i in range(6):
+        ch_name = f'CH{i}'
+        if ch_name in range_map:
+            min_val, max_val = range_map[ch_name]
+            # 线性映射
+            mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL/ (max_val - min_val)
+            motor_vals.append(int(mapped_val))
+        else:
+            motor_vals.append(0)  # Default to 0 if no mapping defined
+    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[3], motor_vals[4], motor_vals[5], motor_vals[0]]
+    return ret_motor_vals
 
 def main():
     # 1. Load Data
@@ -90,10 +111,12 @@ def main():
         # --- B. Compute Target Arm Pose ---
         # Target = Base + Relative_Trajectory[idx]
         rel_pose = relative_trajectory[p_idx]
+        rel_pose[0] *= -1
+        rel_pose[4] *= -1
         target_pose = [0.0] * 6
-        
+        gain = 1.0
         for j in range(6):
-            target_pose[j] = BASE_POSE[j] + rel_pose[j]
+            target_pose[j] = BASE_POSE[j] + rel_pose[j] * gain
             
             # Wrap angles to [-pi, pi] if necessary (standard robotics practice)
             if j >= 3:
@@ -110,18 +133,14 @@ def main():
         # 假设这里读到的已经是你想发送给电机的值：
         
         raw_hand_vals = final_enc_data[e_idx]
-        target_hand = [int(val) for val in raw_hand_vals]
-        
-        # Clip values to safe range (e.g., 0 - 2000)
-        target_hand = [max(0, min(val, 2500)) for val in target_hand] # 假设最大值 2500
+        target_hand = map_encoder_to_motor(raw_hand_vals)
 
         # --- D. Send Command ---
-        if ENABLE_ROBOT:
+        if ENABLE_ROBOT and i > 30:
             # Send Arm
             robot.move_arm_to_pose(target_pose)
             # Send Hand
-            # robot.set_hand_position(target_hand) # 取消注释以启用手部
-            pass
+            robot.set_hand_position(target_hand) # 取消注释以启用手部
 
         # --- E. Record Data ---
         rec_xyz.append(target_pose[:3])
@@ -131,8 +150,8 @@ def main():
         if i % 10 == 0:
             print(f"Frame {i}/{len(frame_idxs)} | Pose: {np.round(target_pose, 3)}")
         
-        if ENABLE_ROBOT:
-            time.sleep(1.0/FPS)
+        # if ENABLE_ROBOT:
+        #     time.sleep(0.01)
 
     print("Replay Finished.")
 

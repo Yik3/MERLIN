@@ -22,17 +22,17 @@ from torch.cuda.amp import autocast, GradScaler
 # CONFIGURATION
 # ===========================================================================
 # 请确保这些路径指向你刚才生成的数据
-VID_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/camera/mp4_files'
-ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/encoder/processed_encoder'
-ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/action/processed_action'
-SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/syncs'
+VID_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files'
+ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder'
+ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action'
+SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/syncs'
 
 # ===========================================================================
 # ARGUMENTS
 # ===========================================================================
 parser = argparse.ArgumentParser(description="MERLIN Single-Cam 12D Training")
 parser.add_argument('-e', '--epochs', type=int, default=20000, help='number of epochs')
-parser.add_argument('-b', '--batch', type=int, default=6, help='batch size') # 显存够的话可以大一点
+parser.add_argument('-b', '--batch', type=int, default=8, help='batch size') # 显存够的话可以大一点
 parser.add_argument('-n', '--norm_path', type=str, default="normalization_stats_12d.npz", help='stats save path')
 parser.add_argument('-q', '--num_queries', type=int, default=70, help='chunk size')
 parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5, help='learning rate')
@@ -206,7 +206,7 @@ print("Training Complete. Weights saved.")
 plt.figure()
 plt.plot(loss_history, label='Train L1')
 # Only display values that are smaller than 2
-plt.ylim(0, 1)
+plt.ylim(0, 2)
 plt.title('Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')

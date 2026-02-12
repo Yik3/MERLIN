@@ -187,8 +187,8 @@ def batch_process_action(input_dir):
 # ==========================================
 if __name__ == "__main__":
     # 请修改这里的路径为你的实际路径
-    ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/encoder'
-    ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/210data/action'
+    ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder'
+    ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action'
     
     print("--- Starting Encoder Batch Processing ---")
     if os.path.exists(ENCODER_DIR):

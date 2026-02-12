@@ -170,7 +170,7 @@ def visualize_pair(enc_path, act_path):
 
 if __name__ == "__main__":
     # === FILL IN PATHS HERE ===
-    ENC_FILE = '/home/classysh/MERLIN/MERLIN/data/210data/encoder/processed_encoder/adc_data_20260210235118.npy'
+    ENC_FILE = '/home/classysh/MERLIN/MERLIN/data/210data/encoder/processed_encoder/adc_data_20260210234340.npy'
     ACT_FILE = '/home/classysh/MERLIN/MERLIN/data/210data/action/processed_action/iphone_data_20260210_234313.npy'
     
     if not os.path.exists(ENC_FILE) or not os.path.exists(ACT_FILE):

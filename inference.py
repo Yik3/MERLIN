@@ -5,6 +5,7 @@ import time
 import cv2
 import argparse
 import collections
+import zmq
 from torchvision import transforms
 
 # 引入 Robot API 和 Core
@@ -31,7 +32,7 @@ STATE_DIM = 12 # 6 (Arm Delta) + 6 (Hand Abs)
 CAMERA_NAMES = ["cam_high"]
 TEMPORAL_AGGREGATION = True
 K_AGGREGATION = 70 # 聚合视野，通常等于 NUM_QUERIES
-
+ZMQ_PORT = 5555
 # ===========================================================================
 # MODEL ARGS (必须与训练一致)
 # ===========================================================================
@@ -69,6 +70,10 @@ def get_image(cap, transform, device):
 
 def main():
     # 1. Setup
+    context = zmq.Context()
+    socket = context.socket(zmq.PUB)
+    socket.bind(f"tcp://*:{ZMQ_PORT}")
+    print(f"ZMQ Publisher bound to port {ZMQ_PORT}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -188,21 +193,13 @@ def main():
             raw_action_np = raw_action.cpu().numpy()
             pred_arm_delta = raw_action_np[:6] # [x, y, z, rx, ry, rz]
             pred_hand_abs = raw_action_np[6:]  # [6 motors]
-
-            # 3. 计算 Arm Target (Integration)
-            next_target_pose = curr_target_pose + pred_arm_delta
+            data_packet = {
+                'step': t_step,
+                'pred_arm_delta': pred_arm_delta.tolist(),
+                'pred_hand_abs': pred_hand_abs.tolist(),
+            }
+            socket.send_pyobj(data_packet)
             
-            # 4. 计算 Hand Target (Clipping)
-            MAX_HAND_VAL = 3000 # 根据实际情况调整
-            cmd_hand = np.clip(pred_hand_abs, 0, MAX_HAND_VAL).astype(int)
-
-            # --- E. Execute Command ---
-            # 发送 Arm 指令
-            # robot.move_arm_to_pose(next_target_pose, speed=100, block=False)
-            
-            # 发送 Hand 指令
-            # robot.set_hand_position(cmd_hand)
-
             # --- F. Update State for Next Step ---
             # ACT 的自回归特性：将当前执行的动作（归一化后）作为下一步的输入状态
             curr_qpos_norm = curr_action_norm_tensor
@@ -227,6 +224,8 @@ def main():
     finally:
         cap.release()
         cv2.destroyAllWindows()
+        socket.close()
+        context.term()
         # robot.disconnect()
         print("Hardware disconnected.")
 

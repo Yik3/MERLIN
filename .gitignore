@@ -14,3 +14,5 @@ sanity_results/
 __pycache__/
 replay_results/
 *.png
+
+training_data_check/

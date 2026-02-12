@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-
+from Total_API import *
 # --- 你的基础配置 ---
 BASE_POSE = [-0.196845, -0.328856, 0.042091, 1.517, -1.19, 0.07]
 
@@ -22,6 +22,10 @@ def parse_input_txt(file_path):
             # parts[1:8] -> pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z
             pose.append(tuple(map(float, parts[1:8])))
     return pose
+
+def get_euler_scipy(w, x, y, z):
+    r = R.from_quat([x, y, z, w]) # scipy order x, y, z, w
+    return r.as_euler('xyz')
 
 def plot_3d_trajectory(xyz, M_type):
     import matplotlib.pyplot as plt
@@ -147,11 +151,15 @@ def recover_trajectory(pos_B_list, quat_B_list, offset_vector, base_pose):
 
 if __name__ == "__main__":
     # 1. 读取数据
-    poses = parse_input_txt('iphone_data_20260209_185943.txt')
-    
+    poses = parse_input_txt('210data/iphone_data_20260210_195831.txt')
+    IP = "169.254.128.19"
+    robot = RobotControlAPI(IP)
     pos_list = []
     quat_list = []
-    
+    PLOT = True
+    ENABLE_ROBOT = False
+    #robot.move_arm_to_pose(BASE_POSE)
+    #time.sleep(1.5)
     for pose in poses:
         # 提取位置 (x, y, z)
         raw_pos = list(pose[0:3])
@@ -174,7 +182,36 @@ if __name__ == "__main__":
     )
     
     # [Step 3] 绘图验证
-    print("Close the plot windows to finish...")
-    plot_3d_trajectory(xyz_res, M_type='Time')
-    plot_3d_trajectory(xyz_res, M_type='3D')
-    plot_euler_angles(euler_res, title="Recovered Robot Flange Pose")
+    
+
+    # [Step 4] 发送给机器人 (如果启用)
+
+    xyz_res_1 = [[], [], []]
+    euler_res_1 = [[], [], []]
+    for i in range(len(xyz_res[0])):
+        angle = get_euler_scipy(poses[i][3], poses[i][4], poses[i][5], poses[i][6])
+
+        target_pose = [
+            xyz_res[1][i], 
+            -xyz_res[0][i], 
+            xyz_res[2][i], 
+            angle[1] + BASE_POSE[3],
+            -angle[0] + BASE_POSE[4],
+            angle[2] + BASE_POSE[5],
+        ]
+        target_pose[1] -= 0.46
+        xyz_res_1[0].append(target_pose[0])
+        xyz_res_1[1].append(target_pose[1])
+        xyz_res_1[2].append(target_pose[2])
+        euler_res_1[0].append(target_pose[3])
+        euler_res_1[1].append(target_pose[4])
+        euler_res_1[2].append(target_pose[5])
+        if ENABLE_ROBOT:
+            print(f"Sending Pose {i}: {target_pose}")
+            robot.move_arm_to_pose(target_pose)
+            time.sleep(0.01) 
+    if PLOT:
+        print("Close the plot windows to finish...")
+        plot_3d_trajectory(xyz_res_1, M_type='Time')
+        plot_3d_trajectory(xyz_res_1, M_type='3D')
+        plot_euler_angles(euler_res_1, title="Recovered Robot Flange Pose")

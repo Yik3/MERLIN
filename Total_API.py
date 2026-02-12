@@ -353,7 +353,7 @@ if __name__ == "__main__":
         # 4. Set Hand Position (Using C-API)
 
         print("\n--- Setting Hand Position ---")
-        target = [0, 0, 0, 0, 0, 0]
+        target = [0, 0, 0, 0, 0, MAX_VAL-5000]
         success = robot.set_hand_position(target)
         print(f"Command Sent: {success}")
 

@@ -8,19 +8,21 @@ import collections
 from torchvision import transforms
 
 # 引入 Robot API 和 Core
-from Total_API import RobotControlAPI, BASE_POSE
+# from Total_API import RobotControlAPI
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), "train"))
 from train.core import build 
-
+BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
 # ===========================================================================
 # CONFIGURATION
 # ===========================================================================
 # 模型与统计数据
-CKPT_PATH = "weights/policy_last.pth" 
-NORM_STATS_PATH = "normalization_stats_12d.npz"
+CKPT_PATH = "weights/policy_last_2.pth" 
+NORM_STATS_PATH = "weights/normalization_stats_12d.npz"
 
 # 硬件参数
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 0  # 根据实际情况修改
+CAMERA_ID = 18  # 根据实际情况修改
 INFERENCE_FPS = 15 
 
 # ACT 参数
@@ -58,11 +60,12 @@ def get_image(cap, transform, device):
     ret, frame = cap.read()
     if not ret:
         print("Warning: Failed to read camera")
-        return torch.zeros(1, 1, 3, 480, 640).to(device) # Return black if failed
-    
+        dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8) # 黑色图像
+        return torch.zeros(1, 1, 3, 480, 640).to(device), dummy_frame # Return black if failed
+
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     img_tensor = transform(img) # [3, H, W]
-    return img_tensor.unsqueeze(0).unsqueeze(0).to(device) # [1, 1, 3, H, W]
+    return img_tensor.unsqueeze(0).unsqueeze(0).to(device), frame # [1, 1, 3, H, W]
 
 def main():
     # 1. Setup
@@ -85,13 +88,13 @@ def main():
 
     # 4. Initialize Hardware
     print("Initializing Robot...")
-    robot = RobotControlAPI(ROBOT_IP)
+    # robot = RobotControlAPI(ROBOT_IP)
     
     print("Moving to BASE POSE...")
-    robot.move_arm_to_pose(BASE_POSE, speed=20, block=True)
+    # robot.move_arm_to_pose(BASE_POSE, speed=20, block=True)
     
     init_hand = [0, 0, 0, 0, 0, 0]
-    robot.set_hand_position(init_hand)
+    # robot.set_hand_position(init_hand)
     
     print("Opening Camera...")
     cap = cv2.VideoCapture(CAMERA_ID)
@@ -130,8 +133,13 @@ def main():
             loop_start = time.time()
 
             # --- A. Get Observation ---
-            image_input = get_image(cap, transform, device)
+            image_input, frame = get_image(cap, transform, device)
             qpos_input = curr_qpos_norm.unsqueeze(0) # [1, 12]
+            cv2.putText(frame, f"Step: {t_step}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.imshow("Robot Camera Feed", frame) 
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                print("Quit key pressed.")
+                break
 
             # --- B. Model Inference ---
             with torch.no_grad():
@@ -139,7 +147,7 @@ def main():
                 all_actions = model(qpos_input, image_input, None) 
             
             # 转为 Numpy 存入 Buffer: [NUM_QUERIES, 12]
-            pred_cpu = all_actions[0].cpu().numpy()
+            pred_cpu = all_actions[0][0].cpu().numpy()
             past_predictions_buffer.append(pred_cpu)
 
             # --- C. Temporal Aggregation ---
@@ -190,10 +198,10 @@ def main():
 
             # --- E. Execute Command ---
             # 发送 Arm 指令
-            robot.move_arm_to_pose(next_target_pose, speed=100, block=False)
+            # robot.move_arm_to_pose(next_target_pose, speed=100, block=False)
             
             # 发送 Hand 指令
-            robot.set_hand_position(cmd_hand)
+            # robot.set_hand_position(cmd_hand)
 
             # --- F. Update State for Next Step ---
             # ACT 的自回归特性：将当前执行的动作（归一化后）作为下一步的输入状态
@@ -218,7 +226,8 @@ def main():
     
     finally:
         cap.release()
-        robot.disconnect()
+        cv2.destroyAllWindows()
+        # robot.disconnect()
         print("Hardware disconnected.")
 
 if __name__ == "__main__":

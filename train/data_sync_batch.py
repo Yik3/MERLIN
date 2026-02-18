@@ -64,9 +64,9 @@ def batch_process_data(vid_dir, encoder_dir, action_dir, sync_dir, npy_dir):
 
 if __name__ == "__main__":
     batch_process_data(
-        vid_dir="/home/classysh/MERLIN/MERLIN/data/210data/camera/mp4_files",
-        encoder_dir="/home/classysh/MERLIN/MERLIN/data/210data/encoder",
-        action_dir="/home/classysh/MERLIN/MERLIN/data/210data/action",
-        sync_dir="/home/classysh/MERLIN/MERLIN/data/210data/syncs",
-        npy_dir="/home/classysh/MERLIN/MERLIN/data/210data/camera/npy_files"
+        vid_dir="/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files",
+        encoder_dir="/home/classysh/MERLIN/MERLIN/data/211data/encoder",
+        action_dir="/home/classysh/MERLIN/MERLIN/data/211data/action",
+        sync_dir="/home/classysh/MERLIN/MERLIN/data/211data/syncs",
+        npy_dir="/home/classysh/MERLIN/MERLIN/data/211data/camera/npy_files"
     )

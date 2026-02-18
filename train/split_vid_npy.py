@@ -54,5 +54,5 @@ def organize_files(source_dir):
 
 if __name__ == "__main__":
 
-    target_dir = '/home/classysh/MERLIN/MERLIN/data/210data/camera'
+    target_dir = '/home/classysh/MERLIN/MERLIN/data/211data/camera'
     organize_files(target_dir)

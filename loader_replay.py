@@ -7,9 +7,9 @@ from Safety_Constraint import *
 
 # ================= CONFIGURATION =================
 # 请替换为你的实际文件路径
-ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260210234340.npy'
-ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260210_234313.npy'
-SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260210234343_sync.npz'
+ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260212013551.npy'
+ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260212_013544.npy'
+SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260212013552_sync.npz'
 range_map = {
     'CH0': (1286, 2400),
     'CH1': (1413, 1840),
@@ -21,7 +21,7 @@ range_map = {
 IP = '169.254.128.19'
 ENABLE_ROBOT = True  # Set to True to actually move the robot
 FPS = 30
-BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
+BASE_POSE = [-0.298979, -0.303811, 0.263773, 2.023, -0.94, -0.021]
 # =================================================
 
 def smooth_data(data, window=8):
@@ -37,7 +37,7 @@ def smooth_data(data, window=8):
         smoothed[:, dim] = moving_sum / kernel_size
     return smoothed
 
-def map_encoder_to_motor(encoder_vals, gain = 0.83):
+def map_encoder_to_motor(encoder_vals, gain = 0.78):
     motor_vals = []
     for i in range(6):
         ch_name = f'CH{i}'
@@ -55,10 +55,10 @@ def main():
     # 1. Load Data
     print("Loading data files...")
     try:
-        raw_enc = np.load(ENC_NPY)  # [T_enc, 6]
-        raw_act = np.load(ACT_NPY)  # [T_act, 6] (Deltas)
-        sync_data = np.load(SYNC_NPZ)
-        
+        raw_enc = np.load(ENC_NPY, allow_pickle=True)  # [T_enc, 6]
+        raw_act = np.load(ACT_NPY, allow_pickle=True)  # [T_act, 6] (Deltas)
+        sync_data = np.load(SYNC_NPZ, allow_pickle=True)
+
         # 确保 Index 是整数
         frame_idxs = sync_data['frame_idx'].astype(int)
         enc_idxs = sync_data['encoder_idx'].astype(int)
@@ -138,8 +138,9 @@ def main():
         # --- D. Send Command ---
         if ENABLE_ROBOT and i > 30:
             # Send Arm
-            robot.move_arm_to_pose(target_pose)
+            robot.move_arm_to_pose(target_pose, speed=20)  # Adjust speed as needed
             # Send Hand
+            target_hand[0] -= 10000
             robot.set_hand_position(target_hand) # 取消注释以启用手部
 
         # --- E. Record Data ---

@@ -13,9 +13,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "train"))
 from train.core import build 
 
 # ================= CONFIGURATION =================
-CKPT_PATH = "weights/policy_last_2.pth" 
-NORM_STATS_PATH = "weights/normalization_stats_12d.npz"
-CAMERA_ID = 18
+CKPT_PATH = "weights/policy_last_218.pth" 
+NORM_STATS_PATH = "weights/normalization_stats_12d_218.npz"
+CAMERA_ID = 16
 NUM_QUERIES = 70 
 STATE_DIM = 12 
 TEMPORAL_AGGREGATION = True
@@ -97,6 +97,7 @@ def main():
         while True:
             # --- A. Get Observation ---
             # 注意：在 Stop-and-Wait 模式下，这里的图像是机器人动作完成后的新图像
+            start_time = time.time()
             image_input, frame = get_image(cap, transform, device)
             qpos_input = curr_qpos_norm.unsqueeze(0)
             
@@ -129,7 +130,8 @@ def main():
             # 提取原始数据 (Delta 和 Hand Abs)
             pred_arm_delta = raw_action_np[:6]
             pred_hand_abs = raw_action_np[6:]
-
+            end_time = time.time()
+            print(f"Step {t_step}: Inference Time = {end_time - start_time:.3f} seconds")
             # --- E. Send Command & WAIT ---
             data_packet = {
                 'step': t_step,

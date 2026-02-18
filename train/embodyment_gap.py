@@ -7,15 +7,15 @@ from tqdm import tqdm
 from segment_anything import sam_model_registry, SamPredictor
 
 # ================= 配置区域 =================
-INPUT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files'       # 输入文件夹
-OUTPUT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/camera/mask_vid'   # 输出文件夹
+INPUT_DIR = '../data/211data/camera/mp4_files'       # 输入文件夹
+OUTPUT_DIR = '../data/211data/camera/mask_vid'   # 输出文件夹
 
 # SAM 1 配置 (请确保下载了对应的权重文件)
 # 下载地址: https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 CHECKPOINT = "./sam_vit_h_4b8939.pth" 
 MODEL_TYPE = "vit_h" # 对应 checkpoints: vit_h, vit_l, or vit_b
 
-DARKEN_FACTOR = 0.0  # 0.0=全黑, 0.2=保留20%亮度
+DARKEN_FACTOR = 0.2  # 0.0=全黑, 0.2=保留20%亮度
 # ===========================================
 
 # 全局变量存储点击

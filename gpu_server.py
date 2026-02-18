@@ -8,7 +8,6 @@ import zmq
 from torchvision import transforms
 import sys
 
-# 路径设置 (保持原样)
 sys.path.append(os.path.join(os.path.dirname(__file__), "train"))
 from train.core import build 
 

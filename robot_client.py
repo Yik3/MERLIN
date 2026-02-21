@@ -9,7 +9,7 @@ GPU_IP = "192.168.1.100"
 ZMQ_PORT = 5555
 
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 16
+CAMERA_ID = 20
 
 # BASE_POSE (保持原样)
 # BASE_POSE = [-0.259968, -0.253127, 0.265704, 1.89, -0.996, -0.185]
@@ -60,6 +60,7 @@ def main():
         robot.move_arm_to_pose(BASE_POSE, speed=20, block=True)
         robot.set_hand_position([0]*6)
         print("Robot Ready.")
+        time.sleep(1.0) # Ensure robot is stable at base pose
     except Exception as e:
         print(f"Robot connection failed: {e}")
         return
@@ -90,7 +91,6 @@ def main():
             img_bytes = get_compressed_image(cap)
             if img_bytes is None:
                 break
-            
             # 2. 发送图片给 GPU
             # 这里的发送相当于原逻辑中 Inference 循环的开始
             send_packet = {
@@ -98,12 +98,10 @@ def main():
                 'image': img_bytes
             }
             socket.send_pyobj(send_packet)
-            
             # --- B. Receive Command (Blocking) ---
             # 等待 GPU 计算完成并传回数据
             # 这相当于原逻辑中的 "Stop and Wait"
             data = socket.recv_pyobj()
-            
             raw_delta = np.array(data['delta']) 
             raw_hand_enc = np.array(data['hand'])
             
@@ -111,12 +109,12 @@ def main():
             delta_to_apply = raw_delta.copy()
             delta_to_apply[0] *= -1 # X Axis Flip
             delta_to_apply[4] *= -1 # Pitch/Ry Flip
-            
+            if delta_to_apply[2] > 0: delta_to_apply[2] *= 1.4 # Z Axis Amplification
             next_target_pose = current_pose + delta_to_apply
             cmd_hand = map_encoder_to_motor(raw_hand_enc)
             
             # --- D. Execute Command (Blocking) ---
-            cmd_hand[0] -= 5000 
+            cmd_hand[0] -= 13000 
             if cmd_hand[0] < 0: cmd_hand[0] = 0
             
             robot.set_hand_position(cmd_hand)

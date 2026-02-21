@@ -2,7 +2,7 @@
 import cv2
 
 # show the camera feed for each camera ID
-for cam_id in range(10,20):
+for cam_id in range(10,25):
     cap = cv2.VideoCapture(cam_id)
     if not cap.isOpened():
         print(f"Camera ID {cam_id} is not available.")

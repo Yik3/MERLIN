@@ -2,14 +2,15 @@ import numpy as np
 import time
 import os
 import matplotlib.pyplot as plt
-from Total_API import *
-from Safety_Constraint import * 
+#from Total_API import *
+#from Safety_Constraint import * 
 
 # ================= CONFIGURATION =================
 # 请替换为你的实际文件路径
-ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260210234340.npy'
-ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260210_234313.npy'
-SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260210234343_sync.npz'
+MAX_VAL = 65535
+ENC_NPY = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t/adc_data_20260212013551.npy'
+ACT_NPY = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t/iphone_data_20260212_013544.npy'
+SYNC_NPZ = '/home/classysh/MERLIN/MERLIN/data/211data/syncs/video_recording_realsense#20260212013552_sync.npz'
 range_map = {
     'CH0': (1286, 2400),
     'CH1': (1413, 1840),
@@ -19,7 +20,7 @@ range_map = {
     'CH5': (1970, 2667) 
 }
 IP = '169.254.128.19'
-ENABLE_ROBOT = True  # Set to True to actually move the robot
+ENABLE_ROBOT = False  # Set to True to actually move the robot
 FPS = 30
 BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
 # =================================================
@@ -159,7 +160,7 @@ def main():
     rec_xyz = np.array(rec_xyz)
     rec_euler = np.array(rec_euler)
     rec_hand = np.array(rec_hand)
-    
+    np.savez("replay_results.npz", xyz=rec_xyz, euler=rec_euler, hand=rec_hand)
     t_steps = np.arange(len(rec_xyz))
 
     # Plot 1: XYZ

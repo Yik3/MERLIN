@@ -13,8 +13,8 @@ from scipy.spatial.transform import Rotation as R
 # ==========================================
 RAW_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder'
 RAW_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action'
-PROCESSED_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder'
-PROCESSED_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action'
+PROCESSED_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t'
+PROCESSED_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t'
 OUTPUT_DIR = './sanity_results' # 图片保存位置
 
 # ==========================================
@@ -84,7 +84,8 @@ def run_sanity_check():
         return
 
     # 2. 随机采样
-    idx = random.randint(0, num_samples - 1)
+    # idx = random.randint(0, num_samples - 1)
+    idx = 19
     print(f"--- Sanity Check on Sample Index: {idx} ---")
     print(f"Raw Encoder: {raw_enc_files[idx]}")
     print(f"Processed Action: {proc_act_files[idx]}")
@@ -97,11 +98,13 @@ def run_sanity_check():
 
     finger_names = ['ThumbLow', 'ThumbUp', 'Pointer', 'Middle', 'Ring', 'Pinky']
     
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(25, 10))
+    # don't plot values above 2350 for better visualization
     for i in range(6):
         plt.subplot(2, 3, i+1)
         plt.plot(raw_enc_data[:, i], label='Raw', alpha=0.5, color='gray')
         plt.plot(proc_enc_data[:, i], label='Processed (LPF)', color='blue', linewidth=1.5)
+        #plt.ylim(1900, 2500)
         plt.title(f"{finger_names[i]}")
         plt.legend()
     plt.suptitle(f"Encoder Check (Sample {idx})", fontsize=16)

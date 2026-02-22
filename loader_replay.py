@@ -2,15 +2,15 @@ import numpy as np
 import time
 import os
 import matplotlib.pyplot as plt
-#from Total_API import *
-#from Safety_Constraint import * 
-
+from Total_API import *
+from Safety_Constraint import * 
+import cv2
 # ================= CONFIGURATION =================
 # 请替换为你的实际文件路径
-MAX_VAL = 65535
-ENC_NPY = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t/adc_data_20260212013551.npy'
-ACT_NPY = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t/iphone_data_20260212_013544.npy'
-SYNC_NPZ = '/home/classysh/MERLIN/MERLIN/data/211data/syncs/video_recording_realsense#20260212013552_sync.npz'
+ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260212013551.npy'
+ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260212_013544.npy'
+SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260212013552_sync.npz'
+SAVE_DIR = '/home/rm/Documents/MERLIN/replay_results'
 range_map = {
     'CH0': (1286, 2400),
     'CH1': (1413, 1840),
@@ -20,9 +20,11 @@ range_map = {
     'CH5': (1970, 2667) 
 }
 IP = '169.254.128.19'
-ENABLE_ROBOT = False  # Set to True to actually move the robot
+ENABLE_ROBOT = True  # Set to True to actually move the robot
+RECORD_OBSERVATION = True  # Whether to record the camera observation during replay (for visualization)
+CAMERA_ID = 20
 FPS = 30
-BASE_POSE = [-0.298979, -0.303811, 0.308773, 1.823, -0.94, 0.221]
+BASE_POSE = [-0.298979, -0.303811, 0.263773, 2.023, -0.94, -0.021]
 # =================================================
 
 def smooth_data(data, window=8):
@@ -38,7 +40,7 @@ def smooth_data(data, window=8):
         smoothed[:, dim] = moving_sum / kernel_size
     return smoothed
 
-def map_encoder_to_motor(encoder_vals, gain = 0.83):
+def map_encoder_to_motor(encoder_vals, gain = 0.78):
     motor_vals = []
     for i in range(6):
         ch_name = f'CH{i}'
@@ -53,13 +55,14 @@ def map_encoder_to_motor(encoder_vals, gain = 0.83):
     return ret_motor_vals
 
 def main():
+    global ENABLE_ROBOT, RECORD_OBSERVATION
     # 1. Load Data
     print("Loading data files...")
     try:
-        raw_enc = np.load(ENC_NPY)  # [T_enc, 6]
-        raw_act = np.load(ACT_NPY)  # [T_act, 6] (Deltas)
-        sync_data = np.load(SYNC_NPZ)
-        
+        raw_enc = np.load(ENC_NPY, allow_pickle=True)  # [T_enc, 6]
+        raw_act = np.load(ACT_NPY, allow_pickle=True)  # [T_act, 6] (Deltas)
+        sync_data = np.load(SYNC_NPZ, allow_pickle=True)
+
         # 确保 Index 是整数
         frame_idxs = sync_data['frame_idx'].astype(int)
         enc_idxs = sync_data['encoder_idx'].astype(int)
@@ -90,17 +93,34 @@ def main():
         time.sleep(2.0)
     else:
         print("Robot Disabled (Simulation Mode)")
-
+    # initialize camera if recording observation
+    if RECORD_OBSERVATION:
+        print(f"Initializing camera (ID: {CAMERA_ID}) for observation recording...")
+        cap = cv2.VideoCapture(CAMERA_ID)
+        if not cap.isOpened():
+            print(f"Camera ID {CAMERA_ID} is not available. Observation recording disabled.")
+            RECORD_OBSERVATION = False
+        else:
+            # Set resolution and FPS if needed
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, FPS)
     # Recording buffers for visualization
     rec_xyz = []
     rec_euler = []
     rec_hand = []
 
     print(f"Starting Replay ({len(frame_idxs)} frames)...")
-    
+    if RECORD_OBSERVATION:
+        # if save dir is not exist, create it
+        if not os.path.exists(SAVE_DIR):
+            os.makedirs(SAVE_DIR)
+        out = cv2.VideoWriter(os.path.join(SAVE_DIR, "replay.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (640, 480))
     # 4. Main Loop
     for i in range(len(frame_idxs)):
         # --- A. Get Indices from Sync File ---
+        # If record, get frame from camera
+        
         p_idx = pose_idxs[i]
         e_idx = enc_idxs[i]
         
@@ -138,10 +158,24 @@ def main():
 
         # --- D. Send Command ---
         if ENABLE_ROBOT and i > 30:
+            if RECORD_OBSERVATION:
+                ret, frame = cap.read()
+                if ret:
+                    # Save as mp4 video
+                    out.write(frame)
+                    # show in real-time
+                    cv2.imshow("Replay Observation", frame)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        print("Replay interrupted by user.")
+                        break
+                else:
+                    continue
             # Send Arm
-            robot.move_arm_to_pose(target_pose)
+            robot.move_arm_to_pose(target_pose, speed=20)  # Adjust speed as needed
             # Send Hand
+            target_hand[0] -= 10000
             robot.set_hand_position(target_hand) # 取消注释以启用手部
+
 
         # --- E. Record Data ---
         rec_xyz.append(target_pose[:3])
@@ -155,6 +189,10 @@ def main():
         #     time.sleep(0.01)
 
     print("Replay Finished.")
+    if RECORD_OBSERVATION:
+        cap.release()
+        out.release()
+        cv2.destroyAllWindows()
 
     # 5. Visualization
     rec_xyz = np.array(rec_xyz)

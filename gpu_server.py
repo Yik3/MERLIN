@@ -8,21 +8,21 @@ import zmq
 from torchvision import transforms
 import sys
 
-# 路径设置
 sys.path.append(os.path.join(os.path.dirname(__file__), "train"))
 from train.core import build 
 
 # ================= CONFIGURATION =================
+# 这里的 IP 设置为 0.0.0.0 表示监听所有网口（包括 Ethernet）
+ZMQ_BIND_ADDR = "tcp://0.0.0.0:5555" 
+
 CKPT_PATH = "weights/policy_last_218.pth" 
 NORM_STATS_PATH = "weights/normalization_stats_12d_218.npz"
-CAMERA_ID = 16
 NUM_QUERIES = 70 
 STATE_DIM = 12 
 TEMPORAL_AGGREGATION = True
 K_AGGREGATION = 70
-ZMQ_PORT = 5555
 
-# ================= MODEL ARGS =================
+# ================= MODEL ARGS (保持原样) =================
 class ModelArgs:
     def __init__(self):
         self.num_queries = NUM_QUERIES
@@ -42,21 +42,32 @@ class ModelArgs:
         self.dilation = False
 
 # ================= HELPER FUNCTIONS =================
-def get_image(cap, transform, device):
-    ret, frame = cap.read()
-    if not ret:
-        print("Warning: Failed to read camera")
+def process_received_image(img_bytes, transform, device):
+    """
+    将接收到的字节流解码为 Tensor
+    """
+    # 1. 解码图片
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    
+    if frame is None:
+        print("Warning: Failed to decode image from robot")
         return torch.zeros(1, 1, 3, 480, 640).to(device), np.zeros((480, 640, 3), dtype=np.uint8)
+
+    # 2. 转换格式 (BGR -> RGB)
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    # 3. Transform & Unsqueeze
     img_tensor = transform(img)
     return img_tensor.unsqueeze(0).unsqueeze(0).to(device), frame
 
 def main():
-    # 1. Setup ZMQ (PAIR Pattern for synchronous lock-step)
+    # 1. Setup ZMQ (Server Side)
     context = zmq.Context()
     socket = context.socket(zmq.PAIR)
-    socket.bind(f"tcp://*:{ZMQ_PORT}")
-    print(f"[Inference] ZMQ PAIR bound to port {ZMQ_PORT}")
+    socket.bind(ZMQ_BIND_ADDR)
+    print(f"[GPU Server] ZMQ PAIR bound to {ZMQ_BIND_ADDR}")
+    print("[GPU Server] Waiting for Robot connection...")
 
     # 2. Setup Device & Model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -74,31 +85,36 @@ def main():
     model.to(device)
     model.eval()
 
-    # 3. Initialize Camera
-    cap = cv2.VideoCapture(CAMERA_ID)
+    # 3. Setup Transform
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     transform = transforms.Compose([transforms.ToTensor(), normalize])
 
     # 4. Initialize State
-    # 初始状态设为0，符合 ACT 训练时的相对坐标逻辑
     raw_arm_delta_init = torch.zeros(6).to(device)
-    raw_hand_abs_init = torch.zeros(6).float().to(device) # 假设初始手部也是0或者特定值
+    raw_hand_abs_init = torch.zeros(6).float().to(device)
     raw_qpos_init = torch.cat([raw_arm_delta_init, raw_hand_abs_init])
-    
     curr_qpos_norm = (raw_qpos_init - qpos_mean) / qpos_std
     
     past_predictions_buffer = collections.deque(maxlen=K_AGGREGATION)
     exp_weight_k = 0.05
 
-    print("\n=== STARTING SYNCHRONOUS INFERENCE LOOP ===")
+    print("\n=== GPU READY, WAITING FOR IMAGE STREAM ===")
     
     try:
         t_step = 0
         while True:
-            # --- A. Get Observation ---
-            # 注意：在 Stop-and-Wait 模式下，这里的图像是机器人动作完成后的新图像
+            # --- A. Receive Image from Robot (Blocking) ---
+            # 机器人每执行完一次动作，会采集新图片发过来
+            # 这相当于原逻辑中的 "Wait" + "Get Observation"
+            data_packet = socket.recv_pyobj() 
+            
+            img_bytes = data_packet['image']
+            robot_step = data_packet['step']
+            
             start_time = time.time()
-            image_input, frame = get_image(cap, transform, device)
+            
+            # 处理图像
+            image_input, frame = process_received_image(img_bytes, transform, device)
             qpos_input = curr_qpos_norm.unsqueeze(0)
             
             # --- B. Model Inference ---
@@ -122,46 +138,40 @@ def main():
             else:
                 curr_action_norm_np = pred_cpu[0]
 
-            # --- D. Post-Process (Denormalize Only) ---
+            # --- D. Post-Process ---
             curr_action_norm_tensor = torch.from_numpy(curr_action_norm_np).float().to(device)
             raw_action = (curr_action_norm_tensor * qpos_std) + qpos_mean
             raw_action_np = raw_action.cpu().numpy()
             
-            # 提取原始数据 (Delta 和 Hand Abs)
             pred_arm_delta = raw_action_np[:6]
             pred_hand_abs = raw_action_np[6:]
+            
             end_time = time.time()
-            print(f"Step {t_step}: Inference Time = {end_time - start_time:.3f} seconds")
-            # --- E. Send Command & WAIT ---
-            data_packet = {
+            print(f"Step {t_step} (Robot Step {robot_step}): Inference Time = {end_time - start_time:.3f}s")
+
+            # --- E. Send Command back to Robot ---
+            response_packet = {
                 'step': t_step,
-                'delta': pred_arm_delta.tolist(),     # 原始 Delta
-                'hand': pred_hand_abs.tolist()        # 原始 Hand
+                'delta': pred_arm_delta.tolist(),
+                'hand': pred_hand_abs.tolist()
             }
-            
-            # 1. 发送数据
-            socket.send_pyobj(data_packet)
-            
-            # 2. 【关键】阻塞等待机器人完成 (Stop Inference)
-            print(f"Step {t_step}: Waiting for robot execution...")
-            ack = socket.recv_string() # 此时程序会卡在这里，直到收到 "DONE"
-            print(f"Step {t_step}: Robot finished. Continuing.")
+            socket.send_pyobj(response_packet)
 
             # --- F. Update Model State ---
+            # 更新状态用于下一次推理
             curr_qpos_norm = curr_action_norm_tensor
             
-            # Visualization
-            cv2.putText(frame, f"Step: {t_step} (Synced)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.imshow("Robot Camera", frame) 
+            # Visualization (On GPU Server)
+            cv2.putText(frame, f"Server Step: {t_step}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.imshow("GPU Server View", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
 
             t_step += 1
 
     except KeyboardInterrupt:
-        print("\nStopping inference...")
+        print("\nStopping GPU server...")
     finally:
-        cap.release()
         cv2.destroyAllWindows()
         socket.close()
         context.term()

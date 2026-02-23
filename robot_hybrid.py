@@ -11,9 +11,9 @@ ACT_PORT = 5555  # ACT 端口
 DP_PORT = 5556   # DP 端口
 
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 16
+CAMERA_ID = 20
 
-BASE_POSE = [-0.298979, -0.303811, 0.263773, 2.023, -0.94, -0.021]
+BASE_POSE = [-0.142258,-0.287446,0.250924,2.78,-1.105,-1.107]
 MAX_HAND_VAL = 65535
 range_map = {
     'CH0': (1640, 2750), 
@@ -23,7 +23,14 @@ range_map = {
     'CH4': (1235, 2200),
     'CH5': (1240, 2130) 
 }
-
+monotonicity_map = {
+    'CH0': 0,
+    'CH1': 1,
+    'CH2': 0,
+    'CH3': 0,
+    'CH4': 0,
+    'CH5': 0
+}
 # 全局变量与锁
 global_img_bytes = None
 camera_lock = threading.Lock()
@@ -37,11 +44,13 @@ def map_encoder_to_motor(encoder_vals, gain=1.0):
         ch_name = f'CH{i}'
         if ch_name in range_map:
             min_val, max_val = range_map[ch_name]
+            if monotonicity_map.get(ch_name, 0) == 0: 
+                encoder_vals[i] = max_val - (encoder_vals[i] - min_val)
             mapped_val = gain * (encoder_vals[i] - min_val) * MAX_HAND_VAL / (max_val - min_val)
             motor_vals.append(int(mapped_val))
         else:
             motor_vals.append(0) 
-    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[3], motor_vals[4], motor_vals[5], motor_vals[0]]
+    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
     return np.clip(ret_motor_vals, 0, MAX_HAND_VAL).astype(int).tolist()
 
 def get_compressed_image(frame):
@@ -67,8 +76,9 @@ def act_hand_thread(robot):
             continue
             
         socket.send_pyobj({'step': t_step, 'image': img})
+        print(f"[ACT Hand] Step {t_step} Sent Image, waiting for hand encoders...")
         data = socket.recv_pyobj() # 阻塞等待 0.02s
-        
+        print(f"[ACT Hand] Step {t_step} Received Hand Encoders")
         raw_hand_enc = np.array(data['hand'])
         cmd_hand = map_encoder_to_motor(raw_hand_enc)
         cmd_hand[0] -= 5000 
@@ -101,12 +111,13 @@ def dp_arm_thread(robot):
             
         # 发送图片，服务端的高频 Buffer 会处理它
         socket.send_pyobj({'step': t_step, 'image': img})
+        print(f"[DP Arm] Step {t_step} Sent Image, waiting for delta...")
         data = socket.recv_pyobj() # 阻塞等待 1s
-        
+        print(f"[DP Arm] Step {t_step} Received Delta")
         raw_delta = np.array(data['delta']) 
         delta_to_apply = raw_delta.copy()
-        delta_to_apply[0] *= -1 
-        delta_to_apply[4] *= -1 
+        # delta_to_apply[0] *= -1 
+        # delta_to_apply[4] *= -1 
         
         next_target_pose = current_pose + delta_to_apply
         
@@ -124,8 +135,9 @@ def main():
     
     robot = RobotControlAPI(ROBOT_IP)
     robot.move_arm_to_pose(BASE_POSE, speed=20, block=True)
-    robot.set_hand_position([0]*6)
-    
+    start_hand = [0, 0, 0, 0, 0, MAX_HAND_VAL-10000]
+    robot.set_hand_position(start_hand)
+
     cap = cv2.VideoCapture(CAMERA_ID)
     
     # 启动双线程
@@ -140,6 +152,8 @@ def main():
         while True:
             ret, frame = cap.read()
             if ret:
+                frame = cv2.flip(frame, 1) # 水平翻转
+                frame = cv2.flip(frame, 0) # 垂直翻转
                 compressed = get_compressed_image(frame)
                 with camera_lock:
                     global_img_bytes = compressed

@@ -7,7 +7,7 @@ import collections
 import zmq
 from torchvision import transforms
 import sys
-
+# sudo ip addr add 169.254.128.80/16 dev enp2s0
 sys.path.append(os.path.join(os.path.dirname(__file__), "train"))
 from train.core import build 
 
@@ -15,8 +15,8 @@ from train.core import build
 # 这里的 IP 设置为 0.0.0.0 表示监听所有网口（包括 Ethernet）
 ZMQ_BIND_ADDR = "tcp://0.0.0.0:5555" 
 
-CKPT_PATH = "weights/policy_last_218.pth" 
-NORM_STATS_PATH = "weights/normalization_stats_12d_218.npz"
+CKPT_PATH = "weights/policy_epoch_11000_221.pth" 
+NORM_STATS_PATH = "weights/normalization_stats_12d_221.npz"
 NUM_QUERIES = 70 
 STATE_DIM = 12 
 TEMPORAL_AGGREGATION = True
@@ -96,7 +96,7 @@ def main():
     curr_qpos_norm = (raw_qpos_init - qpos_mean) / qpos_std
     
     past_predictions_buffer = collections.deque(maxlen=K_AGGREGATION)
-    exp_weight_k = 0.05
+    exp_weight_k = 0.06
 
     print("\n=== GPU READY, WAITING FOR IMAGE STREAM ===")
     
@@ -106,6 +106,7 @@ def main():
             # --- A. Receive Image from Robot (Blocking) ---
             # 机器人每执行完一次动作，会采集新图片发过来
             # 这相当于原逻辑中的 "Wait" + "Get Observation"
+            print(f"\n[GPU Server] Waiting for image from robot at step {t_step}...")
             data_packet = socket.recv_pyobj() 
             
             img_bytes = data_packet['image']

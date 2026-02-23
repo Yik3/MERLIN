@@ -23,8 +23,8 @@ from torch.cuda.amp import autocast, GradScaler
 # ===========================================================================
 # 请确保这些路径指向你刚才生成的数据
 VID_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files'
-ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder'
-ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action'
+ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t'
+ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t'
 SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/syncs'
 
 # ===========================================================================
@@ -32,7 +32,7 @@ SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/syncs'
 # ===========================================================================
 parser = argparse.ArgumentParser(description="MERLIN Single-Cam 12D Training")
 parser.add_argument('-e', '--epochs', type=int, default=20000, help='number of epochs')
-parser.add_argument('-b', '--batch', type=int, default=8, help='batch size') # 显存够的话可以大一点
+parser.add_argument('-b', '--batch', type=int, default=10, help='batch size') # 显存够的话可以大一点
 parser.add_argument('-n', '--norm_path', type=str, default="normalization_stats_12d.npz", help='stats save path')
 parser.add_argument('-q', '--num_queries', type=int, default=70, help='chunk size')
 parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5, help='learning rate')
@@ -41,7 +41,7 @@ args = parser.parse_args()
 # ===========================================================================
 # SETUP DEVICE
 # ===========================================================================
-device = torch.device("cuda:6" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # ===========================================================================
@@ -194,12 +194,12 @@ for epoch in range(args.epochs):
     
     # --- SAVE ---
     # 每 500 epoch 或在最后几个 epoch 频繁保存
-    if (epoch + 1) % 1000 == 0 and epoch > args.epochs - 8000:
-        save_path = f"weights/policy_epoch_{epoch+1}.pth"
+    if (epoch + 1) % 1000 == 0 and epoch > args.epochs - 10000:
+        save_path = f"weights/policy_epoch_{epoch+1}_218.pth"
         torch.save(model.state_dict(), save_path)
 
 # Final Save
-torch.save(model.state_dict(), "weights/policy_last.pth")
+torch.save(model.state_dict(), "weights/policy_last_218.pth")
 print("Training Complete. Weights saved.")
 
 # Plot Loss

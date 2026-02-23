@@ -221,7 +221,7 @@ def main():
     rec_xyz = np.array(rec_xyz)
     rec_euler = np.array(rec_euler)
     rec_hand = np.array(rec_hand)
-    
+    np.savez("replay_results.npz", xyz=rec_xyz, euler=rec_euler, hand=rec_hand)
     t_steps = np.arange(len(rec_xyz))
 
     # Plot 1: XYZ

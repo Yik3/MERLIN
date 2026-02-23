@@ -5,40 +5,56 @@ import cv2
 from Total_API import RobotControlAPI 
 # from Safety_Constraint import * # ================= CONFIGURATION =================
 # 【重要】请修改为 GPU 电脑的 Ethernet IP 地址
+# sudo ip addr add 192.168.1.11/24 dev eth0
 GPU_IP = "192.168.1.100" 
 ZMQ_PORT = 5555
 
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 16
+CAMERA_ID = 20
 
 # BASE_POSE (保持原样)
 # BASE_POSE = [-0.259968, -0.253127, 0.265704, 1.89, -0.996, -0.185]
-BASE_POSE = [-0.298979, -0.303811, 0.263773, 2.023, -0.94, -0.021]
+# BASE_POSE = [-0.208566, -0.359196, 0.335435, 2.265, -0.727, -0.67]
+# BASE_POSE = [-0.227348, -0.351303, 0.262927, 2.937, -1.085, -1.233]
+BASE_POSE = [-0.142258, -0.257446, 0.250924, 2.78, -1.000, -1.107]
 
 # 手部映射参数
 MAX_HAND_VAL = 65535
+MAX_VAL = 65535
 range_map = {
-    'CH0': (1286, 2400),
-    'CH1': (1413, 1840),
-    'CH2': (1900, 2883),
-    'CH3': (1902, 2742),
-    'CH4': (1750, 2700),
-    'CH5': (1970, 2667) 
+    'CH0': (1740, 2750), 
+    'CH1': (2050, 2500),
+    'CH2': (1100, 2037),
+    'CH3': (1235, 2060),
+    'CH4': (1235, 2200),
+    'CH5': (1240, 2130) 
 }
-
+monotonivity_map = {
+    'CH0': 0,  # Monotonically Decreasing
+    'CH1': 1,  # Monotonically Increasing
+    'CH2': 0,  # Monotonically Decreasing
+    'CH3': 0,  # Monotonically Decreasing
+    'CH4': 0,  # Monotonically Decreasing
+    'CH5': 0   # Monotonically Decreasing
+}
 # ================= HELPER FUNCTIONS =================
-def map_encoder_to_motor(encoder_vals, gain=1.0):
+def map_encoder_to_motor(encoder_vals, gain = 1.0):
     motor_vals = []
     for i in range(6):
         ch_name = f'CH{i}'
         if ch_name in range_map:
             min_val, max_val = range_map[ch_name]
-            mapped_val = gain * (encoder_vals[i] - min_val) * MAX_HAND_VAL / (max_val - min_val)
+            # Linear Mapping with Monotonicity Consideration
+            if monotonivity_map[ch_name] == 0:  # Monotonically Decreasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (max_val - encoder_vals[i]) * MAX_VAL / (max_val - min_val)
+            else:  # Monotonically Increasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL / (max_val - min_val)
             motor_vals.append(int(mapped_val))
         else:
-            motor_vals.append(0) 
-    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[3], motor_vals[4], motor_vals[5], motor_vals[0]]
-    ret_motor_vals = np.clip(ret_motor_vals, 0, MAX_HAND_VAL).astype(int).tolist()
+            motor_vals.append(0)  # Default to 0 if no mapping defined
+    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
     return ret_motor_vals
 
 def get_compressed_image(cap):
@@ -48,7 +64,9 @@ def get_compressed_image(cap):
         print("Warning: Failed to read camera")
         return None
     # 编码为 JPG 以减少 Ethernet 延迟 (质量 90 足够)
-    ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    out_frame = cv2.flip(frame,1)
+    out_frame = cv2.flip(out_frame, 0)
+    ret, buffer = cv2.imencode('.jpg', out_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return buffer.tobytes()
 
 def main():
@@ -58,8 +76,10 @@ def main():
         robot = RobotControlAPI(ROBOT_IP)
         print("Moving to BASE POSE...")
         robot.move_arm_to_pose(BASE_POSE, speed=20, block=True)
-        robot.set_hand_position([0]*6)
+        start_hand_pos = [0, 0, 0, 0, 0, MAX_HAND_VAL-15000]
+        robot.set_hand_position(start_hand_pos)
         print("Robot Ready.")
+        time.sleep(1.0) # Ensure robot is stable at base pose
     except Exception as e:
         print(f"Robot connection failed: {e}")
         return
@@ -90,44 +110,50 @@ def main():
             img_bytes = get_compressed_image(cap)
             if img_bytes is None:
                 break
-            
             # 2. 发送图片给 GPU
             # 这里的发送相当于原逻辑中 Inference 循环的开始
             send_packet = {
                 'step': t_step,
                 'image': img_bytes
             }
+            print(f"Step {t_step}: Captured image and sending to GPU...")
             socket.send_pyobj(send_packet)
-            
+            print(f"Step {t_step}: Image sent to GPU, waiting for response...")
             # --- B. Receive Command (Blocking) ---
             # 等待 GPU 计算完成并传回数据
             # 这相当于原逻辑中的 "Stop and Wait"
             data = socket.recv_pyobj()
-            
+            print(f"Step {t_step}: Received response from GPU.")
             raw_delta = np.array(data['delta']) 
             raw_hand_enc = np.array(data['hand'])
             
             # --- C. Process Data ---
             delta_to_apply = raw_delta.copy()
-            delta_to_apply[0] *= -1 # X Axis Flip
-            delta_to_apply[4] *= -1 # Pitch/Ry Flip
-            
+            #delta_to_apply[0] *= -1 # X Axis Flip
+            #delta_to_apply[4] *= -1 # Pitch/Ry Flip
+            if delta_to_apply[2] > 0: delta_to_apply[2] *= 1.1 # Z Axis Amplification
             next_target_pose = current_pose + delta_to_apply
             cmd_hand = map_encoder_to_motor(raw_hand_enc)
             
             # --- D. Execute Command (Blocking) ---
-            cmd_hand[0] -= 5000 
-            if cmd_hand[0] < 0: cmd_hand[0] = 0
-            
+            cmd_hand[0] *= 1.2
+            cmd_hand[0] += 2000
+            cmd_hand[0] = min(cmd_hand[0], MAX_HAND_VAL)
+            cmd_hand[4] *= 0.85
+            cmd_hand[5] *= 0.85
+            cmd_hand[1] *= 1.3
+            # cmd_hand[1] = min(cmd_hand[1], MAX_HAND_VAL)
+            # cmd_hand[2] *= 1.2
+            # cmd_hand[2] = min(cmd_hand[2], MAX_HAND_VAL)
             robot.set_hand_position(cmd_hand)
-            robot.move_arm_to_pose(next_target_pose, speed=20, block=True)
-            time.sleep(0.01) # Ensure completion
+            robot.move_arm_to_pose(next_target_pose, speed=50, block=True)
+            time.sleep(0.003) # Ensure completion
             
             # --- E. Update Internal State ---
             current_pose = next_target_pose
             
-            if t_step % 10 == 0:
-                print(f"Step {t_step} Executed | Sent to GPU -> Recv -> Moved")
+            # if t_step % 10 == 0:
+            #     print(f"Step {t_step} Executed | Sent to GPU -> Recv -> Moved")
 
             t_step += 1
 

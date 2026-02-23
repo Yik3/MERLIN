@@ -16,7 +16,7 @@ CAMERA_ID = 20
 BASE_POSE = [-0.142258,-0.287446,0.250924,2.78,-1.105,-1.107]
 MAX_HAND_VAL = 65535
 range_map = {
-    'CH0': (1640, 2750), 
+    'CH0': (1740, 2750), 
     'CH1': (2050, 2500),
     'CH2': (1100, 2037),
     'CH3': (1235, 2060),
@@ -38,30 +38,36 @@ robot_lock = threading.Lock()  # 防止同时发指令给机器人导致崩溃
 is_running = True
 
 # ================= HELPER FUNCTIONS =================
-def map_encoder_to_motor(encoder_vals, gain=1.0):
+def map_encoder_to_motor(encoder_vals, gain = 1.0):
     motor_vals = []
     for i in range(6):
         ch_name = f'CH{i}'
         if ch_name in range_map:
             min_val, max_val = range_map[ch_name]
-            if monotonicity_map.get(ch_name, 0) == 0: 
-                encoder_vals[i] = max_val - (encoder_vals[i] - min_val)
-            mapped_val = gain * (encoder_vals[i] - min_val) * MAX_HAND_VAL / (max_val - min_val)
+            # Linear Mapping with Monotonicity Consideration
+            if monotonivity_map[ch_name] == 0:  # Monotonically Decreasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (max_val - encoder_vals[i]) * MAX_VAL / (max_val - min_val)
+            else:  # Monotonically Increasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL / (max_val - min_val)
             motor_vals.append(int(mapped_val))
         else:
-            motor_vals.append(0) 
+            motor_vals.append(0)  # Default to 0 if no mapping defined
     ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
-    return np.clip(ret_motor_vals, 0, MAX_HAND_VAL).astype(int).tolist()
+    return ret_motor_vals
 
 def get_compressed_image(frame):
     ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     return buffer.tobytes()
 
+global_12d_state = np.zeros(12, dtype=np.float32)  # [x, y, z, roll, pitch, yaw, hand1, hand2, hand3, hand4, hand5, hand6]
+state_lock = threading.Lock()
 # ================= THREADS =================
 def act_hand_thread(robot):
     """高频线程 (~50Hz): 负责与 ACT 通讯并控制手部"""
-    global is_running, global_img_bytes
-    
+    global is_running, global_img_bytes, global_12d_state
+
     context = zmq.Context()
     socket = context.socket(zmq.PAIR)
     socket.connect(f"tcp://{GPU_IP}:{ACT_PORT}")
@@ -74,16 +80,17 @@ def act_hand_thread(robot):
         if img is None:
             time.sleep(0.01)
             continue
-            
-        socket.send_pyobj({'step': t_step, 'image': img})
-        print(f"[ACT Hand] Step {t_step} Sent Image, waiting for hand encoders...")
+        
+        with state_lock:
+            current_state = global_12d_state.copy()
+        socket.send_pyobj({'step': t_step, 'image': img, 'state': current_state})
+        print(f"[ACT Hand] Step {t_step} Sent Image and State, waiting for hand encoders...")
         data = socket.recv_pyobj() # 阻塞等待 0.02s
         print(f"[ACT Hand] Step {t_step} Received Hand Encoders")
         raw_hand_enc = np.array(data['hand'])
+        with state_lock:
+            global_12d_state[6:12] = raw_hand_enc
         cmd_hand = map_encoder_to_motor(raw_hand_enc)
-        cmd_hand[0] -= 5000 
-        if cmd_hand[0] < 0: cmd_hand[0] = 0
-        
         # 加锁执行
         with robot_lock:
             robot.set_hand_position(cmd_hand)
@@ -92,7 +99,7 @@ def act_hand_thread(robot):
 
 def dp_arm_thread(robot):
     """低频线程 (~1Hz): 负责与 DP 通讯并控制机械臂"""
-    global is_running, global_img_bytes
+    global is_running, global_img_bytes, global_12d_state
     
     context = zmq.Context()
     socket = context.socket(zmq.PAIR)
@@ -108,13 +115,17 @@ def dp_arm_thread(robot):
         if img is None:
             time.sleep(0.01)
             continue
-            
+        
+        with state_lock:
+            current_state = global_12d_state.copy()
         # 发送图片，服务端的高频 Buffer 会处理它
-        socket.send_pyobj({'step': t_step, 'image': img})
+        socket.send_pyobj({'step': t_step, 'image': img, 'state': current_state})
         print(f"[DP Arm] Step {t_step} Sent Image, waiting for delta...")
         data = socket.recv_pyobj() # 阻塞等待 1s
         print(f"[DP Arm] Step {t_step} Received Delta")
         raw_delta = np.array(data['delta']) 
+        with state_lock:
+            global_12d_state[:6] = raw_delta
         delta_to_apply = raw_delta.copy()
         # delta_to_apply[0] *= -1 
         # delta_to_apply[4] *= -1 

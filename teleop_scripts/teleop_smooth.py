@@ -280,7 +280,7 @@ if __name__ == '__main__':
         hand='right',
         scale=1.0,
         filter_strength=0,           # Adjust for smoothness (0-1000)
-        cycle_time=0.05,             # 50ms = 20Hz
+        cycle_time=0.033,             # 50ms = 20Hz
         max_velocity=0.5,            # m/s - reduce if motion is too jerky
         interpolation_alpha=0.2,     # 0-1 - lower = smoother but more lag
         enable_rotation=1,           # Enable rotation control

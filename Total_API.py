@@ -357,11 +357,11 @@ if __name__ == "__main__":
         success = robot.set_hand_position(target)
         print(f"Command Sent: {success}")
 
-        # 5. Move Arm to Pose
-        print("\n--- Moving Arm to Pose ---")
-        target_pose = [-0.259968, -0.253127, 0.305704, 2.35, -0.696, -0.185]
-        success = robot.move_arm_to_pose(target_pose)
-        print(f"Move Command Sent: {success}")
+        # # 5. Move Arm to Pose
+        # print("\n--- Moving Arm to Pose ---")
+        # target_pose = [-0.259968, -0.253127, 0.305704, 2.35, -0.696, -0.185]
+        # success = robot.move_arm_to_pose(target_pose)
+        # print(f"Move Command Sent: {success}")
 
     except Exception as e:
         print(f"Main Error: {e}")

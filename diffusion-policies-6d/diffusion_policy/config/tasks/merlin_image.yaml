@@ -10,7 +10,7 @@ shape_meta: &shape_meta
       shape: [12]
       type: low_dim
   action:
-    shape: [12]
+    shape: [6]
 
 env_runner:
   _target_: shared.env.merlin.merlin_runner.MerlinRunner

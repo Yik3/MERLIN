@@ -15,8 +15,8 @@ from train.core import build
 # 这里的 IP 设置为 0.0.0.0 表示监听所有网口（包括 Ethernet）
 ZMQ_BIND_ADDR = "tcp://0.0.0.0:5555" 
 
-CKPT_PATH = "weights/policy_epoch_11000_221.pth" 
-NORM_STATS_PATH = "weights/normalization_stats_12d_221.npz"
+CKPT_PATH = "weights/policy_epoch_11000_222.pth" 
+NORM_STATS_PATH = "weights/normalization_stats_12d_222.npz"
 NUM_QUERIES = 70 
 STATE_DIM = 12 
 TEMPORAL_AGGREGATION = True

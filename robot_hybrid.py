@@ -4,58 +4,58 @@ import time
 import cv2
 import threading
 from Total_API import RobotControlAPI 
-
+from finger_mapping import *
 # ================= CONFIGURATION =================
 GPU_IP = "192.168.1.100" 
 ACT_PORT = 5555  # ACT 端口
 DP_PORT = 5556   # DP 端口
 
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 20
-
+CAMERA_ID = 14
+RECED = True
 BASE_POSE = [-0.142258,-0.287446,0.250924,2.78,-1.105,-1.107]
 MAX_HAND_VAL = 65535
-range_map = {
-    'CH0': (1740, 2750), 
-    'CH1': (2050, 2500),
-    'CH2': (1100, 2037),
-    'CH3': (1235, 2060),
-    'CH4': (1235, 2200),
-    'CH5': (1240, 2130) 
-}
-monotonicity_map = {
-    'CH0': 0,
-    'CH1': 1,
-    'CH2': 0,
-    'CH3': 0,
-    'CH4': 0,
-    'CH5': 0
-}
+# range_map = {
+#     'CH0': (1740, 2750), 
+#     'CH1': (2050, 2500),
+#     'CH2': (1100, 2037),
+#     'CH3': (1235, 2060),
+#     'CH4': (1235, 2200),
+#     'CH5': (1240, 2130) 
+# }
+# monotonicity_map = {
+#     'CH0': 0,
+#     'CH1': 1,
+#     'CH2': 0,
+#     'CH3': 0,
+#     'CH4': 0,
+#     'CH5': 0
+# }
 # 全局变量与锁
 global_img_bytes = None
 camera_lock = threading.Lock()
 robot_lock = threading.Lock()  # 防止同时发指令给机器人导致崩溃
 is_running = True
-
+MAX_VAL = 65535
 # ================= HELPER FUNCTIONS =================
-def map_encoder_to_motor(encoder_vals, gain = 1.0):
-    motor_vals = []
-    for i in range(6):
-        ch_name = f'CH{i}'
-        if ch_name in range_map:
-            min_val, max_val = range_map[ch_name]
-            # Linear Mapping with Monotonicity Consideration
-            if monotonivity_map[ch_name] == 0:  # Monotonically Decreasing
-                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
-                mapped_val = gain * (max_val - encoder_vals[i]) * MAX_VAL / (max_val - min_val)
-            else:  # Monotonically Increasing
-                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
-                mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL / (max_val - min_val)
-            motor_vals.append(int(mapped_val))
-        else:
-            motor_vals.append(0)  # Default to 0 if no mapping defined
-    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
-    return ret_motor_vals
+# def map_encoder_to_motor(encoder_vals, gain = 1.0):
+#     motor_vals = []
+#     for i in range(6):
+#         ch_name = f'CH{i}'
+#         if ch_name in range_map:
+#             min_val, max_val = range_map[ch_name]
+#             # Linear Mapping with Monotonicity Consideration
+#             if monotonicity_map[ch_name] == 0:  # Monotonically Decreasing
+#                 encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+#                 mapped_val = gain * (max_val - encoder_vals[i]) * MAX_VAL / (max_val - min_val)
+#             else:  # Monotonically Increasing
+#                 encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+#                 mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL / (max_val - min_val)
+#             motor_vals.append(int(mapped_val))
+#         else:
+#             motor_vals.append(0)  # Default to 0 if no mapping defined
+#     ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
+#     return ret_motor_vals
 
 def get_compressed_image(frame):
     ret, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
@@ -63,6 +63,8 @@ def get_compressed_image(frame):
 
 global_12d_state = np.zeros(12, dtype=np.float32)  # [x, y, z, roll, pitch, yaw, hand1, hand2, hand3, hand4, hand5, hand6]
 state_lock = threading.Lock()
+global_chunk_buffer = []
+chunk_lock = threading.Lock()
 # ================= THREADS =================
 def act_hand_thread(robot):
     """高频线程 (~50Hz): 负责与 ACT 通讯并控制手部"""
@@ -93,13 +95,19 @@ def act_hand_thread(robot):
         cmd_hand = map_encoder_to_motor(raw_hand_enc)
         # 加锁执行
         with robot_lock:
+            # cmd_hand[0] *= 1.2
+            # cmd_hand[0] += 7000
+            # cmd_hand[0] = min(cmd_hand[0], MAX_HAND_VAL)
+            # cmd_hand[4] *= 0.85
+            # cmd_hand[5] *= 1.5
+            # cmd_hand[5] = min(cmd_hand[5], MAX_HAND_VAL)
             robot.set_hand_position(cmd_hand)
             
         t_step += 1
 
 def dp_arm_thread(robot):
     """低频线程 (~1Hz): 负责与 DP 通讯并控制机械臂"""
-    global is_running, global_img_bytes, global_12d_state
+    global is_running, global_img_bytes, global_12d_state, global_chunk_buffer
     
     context = zmq.Context()
     socket = context.socket(zmq.PAIR)
@@ -119,27 +127,50 @@ def dp_arm_thread(robot):
         with state_lock:
             current_state = global_12d_state.copy()
         # 发送图片，服务端的高频 Buffer 会处理它
-        socket.send_pyobj({'step': t_step, 'image': img, 'state': current_state})
+        socket.send_pyobj({'step': t_step, 'image': img, 'state': current_state.tolist()})
         print(f"[DP Arm] Step {t_step} Sent Image, waiting for delta...")
         data = socket.recv_pyobj() # 阻塞等待 1s
         print(f"[DP Arm] Step {t_step} Received Delta")
-        raw_delta = np.array(data['delta']) 
-        with state_lock:
-            global_12d_state[:6] = raw_delta
-        delta_to_apply = raw_delta.copy()
-        # delta_to_apply[0] *= -1 
-        # delta_to_apply[4] *= -1 
-        
-        next_target_pose = current_pose + delta_to_apply
-        
-        # 加锁执行
-        with robot_lock:
-            robot.move_arm_to_pose(next_target_pose, speed=20, block=True)
-            
-        current_pose = next_target_pose
-        print(f"[DP Arm] Step {t_step} Moved")
+        raw_delta = data['delta']
+        single_data = data['single_delta']
+        with chunk_lock:
+            all_8 = raw_delta.copy()
+            if RECED:
+                global_chunk_buffer = all_8.copy()
+            else:
+                global_chunk_buffer = single_data.copy()
+            print(f"[DP Arm] Step {t_step} Current Global Chunk Buffer Updated: {global_chunk_buffer}")
         t_step += 1
 
+def arm_execution_thread(robot):
+    """独立线程: 以固定频率检查 global_chunk_buffer 并执行机械臂移动"""
+    global is_running, global_chunk_buffer, global_12d_state
+    
+    current_pose = np.array(BASE_POSE, dtype=np.float32)
+    #print(f"[Arm Execution] Starting at Base Pose: {current_pose}")
+    while is_running:
+        #print(f"[Arm Execution] Checking for new chunk... Current Buffer Length: {len(global_chunk_buffer)}")
+        with chunk_lock:
+            if len(global_chunk_buffer) > 0:
+                if RECED:
+                    action_to_apply = global_chunk_buffer.pop(0)
+                    #print(f"[Arm Execution pop] Popped Action from Buffer: {action_to_apply}")
+                else:
+                    action_to_apply = global_chunk_buffer
+                    global_chunk_buffer = []
+            else:
+                time.sleep(0.01)
+                continue
+        next_target_pose = current_pose + action_to_apply[:6]
+        with state_lock:
+            global_12d_state[:6] = action_to_apply[:6]
+        
+        with robot_lock:
+            print(f"[Arm Execution] Moving to Pose: {next_target_pose}")
+            robot.move_arm_to_pose(next_target_pose.tolist(), speed=20, block=True)
+        
+        current_pose = next_target_pose
+        time.sleep(0.01)
 # ================= MAIN =================
 def main():
     global is_running, global_img_bytes
@@ -154,8 +185,11 @@ def main():
     # 启动双线程
     t_act = threading.Thread(target=act_hand_thread, args=(robot,))
     t_dp = threading.Thread(target=dp_arm_thread, args=(robot,))
+    t_arm = threading.Thread(target=arm_execution_thread, args=(robot,))
+
     t_act.start()
     t_dp.start()
+    t_arm.start()
 
     print("\n=== STARTING THREADED CONTROL LOOP ===")
     try:
@@ -175,6 +209,7 @@ def main():
         is_running = False
         t_act.join()
         t_dp.join()
+        t_arm.join()
         cap.release()
 
 if __name__ == "__main__":

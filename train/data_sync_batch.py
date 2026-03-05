@@ -29,7 +29,6 @@ def save_sync_results(save_path, sync_results):
 def batch_process_data(vid_dir, encoder_dir, action_dir, sync_dir, npy_dir):
     """
     遍历目录，匹配文件，执行同步并保存。
-    假设文件名中有时间戳可以用于匹配 (这里简化逻辑，假设文件名排序后是一一对应的，你需要根据实际文件名匹配逻辑修改)
     """
     os.makedirs(sync_dir, exist_ok=True)
     
@@ -39,34 +38,45 @@ def batch_process_data(vid_dir, encoder_dir, action_dir, sync_dir, npy_dir):
     csvs = sorted([f for f in os.listdir(encoder_dir) if f.endswith('.csv')])
     txts = sorted([f for f in os.listdir(action_dir) if f.endswith('.txt')])
     
-    # 简单的索引对应检查 (实际应用中最好用文件名解析时间戳来这就)
     min_len = min(len(vids), len(npys), len(csvs), len(txts))
+    print(f"Processing {min_len} sets of data based on sorted file lists.")
     
     for i in range(min_len):
         vid_name = vids[i]
-        # 构造完整路径
         npy_path = os.path.join(npy_dir, npys[i])
         csv_path = os.path.join(encoder_dir, csvs[i])
         txt_path = os.path.join(action_dir, txts[i])
         
-        # 定义输出路径
         save_name = os.path.splitext(vid_name)[0] + "_sync.npz"
         save_path = os.path.join(sync_dir, save_name)
         
         print(f"Processing set {i}: {vid_name}...")
         
         # 调用你的同步逻辑
-        # 注意：你需要把 sync_data 函数放到这里或 import 进来
         results = sync_data(npy_path, csv_path, txt_path) 
+        
+        # ==========================================
+        # NEW LOGIC: Drop the first 30 frames
+        # ==========================================
+        DROP_COUNT = 30
+        if results:
+            if len(results) > DROP_COUNT:
+                results = results[DROP_COUNT:]
+                print(f"  -> Dropped first {DROP_COUNT} frames. Remaining: {len(results)}")
+            else:
+                print(f"  -> Warning: Data length ({len(results)}) is less than drop count ({DROP_COUNT}). Emptying results.")
+                results = []
+        # ==========================================
         
         # 保存
         save_sync_results(save_path, results)
-
+        
+    print(f"Found {len(vids)} videos, {len(npys)} npy files, {len(csvs)} encoder files, {len(txts)} action files.")
 if __name__ == "__main__":
     batch_process_data(
-        vid_dir="/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files",
-        encoder_dir="/home/classysh/MERLIN/MERLIN/data/211data/encoder",
-        action_dir="/home/classysh/MERLIN/MERLIN/data/211data/action",
-        sync_dir="/home/classysh/MERLIN/MERLIN/data/211data/syncs",
-        npy_dir="/home/classysh/MERLIN/MERLIN/data/211data/camera/npy_files"
+        vid_dir="/home/classysh/MERLIN/MERLIN/data/bottle/camera/mp4_files",
+        encoder_dir="/home/classysh/MERLIN/MERLIN/data/bottle/encoder",
+        action_dir="/home/classysh/MERLIN/MERLIN/data/bottle/action",
+        sync_dir="/home/classysh/MERLIN/MERLIN/data/bottle/syncs",
+        npy_dir="/home/classysh/MERLIN/MERLIN/data/bottle/camera/npy_files"
     )

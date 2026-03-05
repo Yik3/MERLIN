@@ -83,10 +83,10 @@ def map_axes_z90(pos, euler):
     return np.hstack([new_pos, new_euler])
 
 # ==========================================
-# 2. Encoder 处理逻辑 (保持不变)
+# 2. Encoder 处理逻辑 (Modified for Delta Actions)
 # ==========================================
 
-def process_single_encoder(csv_path, save_path=None, cutoff=2.0, fs=30):
+def process_single_encoder(csv_path, save_path_abs=None, save_path_delta=None, cutoff=2.0, fs=30):
     # Mapping definitions
     range_map_keys = ['CH0-ThumbLow', 'CH1-ThumbUp', 'CH2-Pointer', 
                       'CH3-Middle', 'CH4-Ring', 'CH5-Pinky']
@@ -117,18 +117,28 @@ def process_single_encoder(csv_path, save_path=None, cutoff=2.0, fs=30):
     # 2. Apply LPF
     filtered_data = butter_lowpass_filter(data_array, cutoff, fs)
 
-    # 3. Save
-    if save_path:
-        np.save(save_path, filtered_data)
-        print(f"[Encoder] Saved {filtered_data.shape} to {os.path.basename(save_path)}")
+    # 3. Calculate Delta Action
+    # Action[t] = Pose[t] - Pose[t-1]
+    delta_actions = np.zeros_like(filtered_data)
+    if len(filtered_data) > 1:
+        delta_actions[1:] = filtered_data[1:] - filtered_data[:-1]
+
+    # 4. Save
+    if save_path_abs:
+        np.save(save_path_abs, filtered_data)
+        print(f"[Encoder Abs] Saved {filtered_data.shape} to {os.path.basename(save_path_abs)}")
+        
+    if save_path_delta:
+        np.save(save_path_delta, delta_actions)
+        print(f"[Encoder Delta] Saved {delta_actions.shape} to {os.path.basename(save_path_delta)}")
     
-    return filtered_data
+    return filtered_data, delta_actions
 
 # ==========================================
-# 3. Action 处理逻辑 (核心修改)
+# 3. Action 处理逻辑 (Modified for Both Abs & Delta)
 # ==========================================
 
-def process_single_action(txt_path, save_path=None, cutoff=2.0, fs=30):
+def process_single_action(txt_path, save_path_abs=None, save_path_delta=None, cutoff=2.0, fs=30):
     try:
         # Skip header, read comma separated
         # Format assumed: index, x, y, z, qw, qx, qy, qz
@@ -145,8 +155,6 @@ def process_single_action(txt_path, save_path=None, cutoff=2.0, fs=30):
     quat_raw = raw_data[:, 4:8]    # qw, qx, qy, qz (N, 4)
 
     # --- Step 1: Transformation (Lever Arm Compensation) ---
-    # 这一步修正 XYZ，消除杠杆效应，但保留原始姿态
-    # pos_corrected shape: (N, 3)
     pos_corrected = apply_lever_arm_correction(
         pos_raw, 
         quat_raw[:, 0], quat_raw[:, 1], quat_raw[:, 2], quat_raw[:, 3], 
@@ -154,44 +162,46 @@ def process_single_action(txt_path, save_path=None, cutoff=2.0, fs=30):
     )
 
     # --- Step 2: Convert Quat to Euler ---
-    # 我们需要 Euler 角度来进行 Axis Mapping
-    # 注意：scipy from_quat 需要 (N, 4) [x,y,z,w]
     scipy_quats = np.column_stack([quat_raw[:, 1], quat_raw[:, 2], quat_raw[:, 3], quat_raw[:, 0]])
     r = R.from_quat(scipy_quats)
     euler_raw = r.as_euler('xyz', degrees=False) # (N, 3)
 
     # --- Step 3: Axis Mapping (Flip/Swap) ---
-    # 输入: Corrected XYZ, Raw Euler
-    # 输出: Transformed 6D Pose (Robot Frame)
     transformed_6d = map_axes_z90(pos_corrected, euler_raw)
 
     # --- Step 4: Unwrap Euler Angles ---
-    # 防止角度跳变 (-pi -> pi) 影响滤波
     transformed_6d[:, 3:] = np.unwrap(transformed_6d[:, 3:], axis=0)
 
-    # --- Step 5: Apply LPF (Smoothing) ---
+    # --- Step 5: Apply LPF (Smoothing) - THIS IS THE ABSOLUTE ACTION ---
     smoothed_poses = butter_lowpass_filter(transformed_6d, cutoff, fs)
 
     # --- Step 6: Calculate Delta Action ---
-    # Action[t] = Pose[t] - Pose[t-1]
     delta_actions = np.zeros_like(smoothed_poses)
     if len(smoothed_poses) > 1:
         delta_actions[1:] = smoothed_poses[1:] - smoothed_poses[:-1]
     
-    # --- Step 7: Save ---
-    if save_path:
-        np.save(save_path, delta_actions)
-        print(f"[Action] Saved {delta_actions.shape} to {os.path.basename(save_path)}")
+    # --- Step 7: Save Both ---
+    if save_path_abs:
+        np.save(save_path_abs, smoothed_poses)
+        print(f"[Action Abs] Saved {smoothed_poses.shape} to {os.path.basename(save_path_abs)}")
 
-    return delta_actions
+    if save_path_delta:
+        np.save(save_path_delta, delta_actions)
+        print(f"[Action Delta] Saved {delta_actions.shape} to {os.path.basename(save_path_delta)}")
+
+    return smoothed_poses, delta_actions
 
 # ==========================================
-# 4. Batch Processing 逻辑
+# 4. Batch Processing 逻辑 (Modified)
 # ==========================================
 
 def batch_process_encoder(input_dir):
-    output_dir = os.path.join(input_dir, "processed_encoder_t")
-    os.makedirs(output_dir, exist_ok=True)
+    # Create output directories for both absolute and delta actions
+    output_dir_abs = os.path.join(input_dir, "processed_encoder_t")
+    output_dir_delta = os.path.join(input_dir, "encoder_delta_action_t")
+    
+    os.makedirs(output_dir_abs, exist_ok=True)
+    os.makedirs(output_dir_delta, exist_ok=True)
     
     files = [f for f in os.listdir(input_dir) if f.lower().endswith('.csv')]
     files.sort()
@@ -201,13 +211,20 @@ def batch_process_encoder(input_dir):
     for f in files:
         in_path = os.path.join(input_dir, f)
         save_name = os.path.splitext(f)[0] + ".npy"
-        out_path = os.path.join(output_dir, save_name)
         
-        process_single_encoder(in_path, out_path, cutoff=0.4, fs=30)
+        # Define the two save paths
+        out_path_abs = os.path.join(output_dir_abs, save_name)
+        out_path_delta = os.path.join(output_dir_delta, save_name)
+        
+        process_single_encoder(in_path, out_path_abs, out_path_delta, cutoff=0.4, fs=30)
 
 def batch_process_action(input_dir):
-    output_dir = os.path.join(input_dir, "processed_action_t")
-    os.makedirs(output_dir, exist_ok=True)
+    # 创建 absolute 和 delta 两个输出文件夹
+    output_dir_abs = os.path.join(input_dir, "absolute_action")
+    output_dir_delta = os.path.join(input_dir, "processed_action_t") 
+    
+    os.makedirs(output_dir_abs, exist_ok=True)
+    os.makedirs(output_dir_delta, exist_ok=True)
     
     files = [f for f in os.listdir(input_dir) if f.lower().endswith('.txt')]
     files.sort()
@@ -217,20 +234,20 @@ def batch_process_action(input_dir):
     for f in files:
         in_path = os.path.join(input_dir, f)
         save_name = os.path.splitext(f)[0] + ".npy"
-        out_path = os.path.join(output_dir, save_name)
         
-        process_single_action(in_path, out_path, cutoff=2.0, fs=30)
+        # Define the two save paths
+        out_path_abs = os.path.join(output_dir_abs, save_name)
+        out_path_delta = os.path.join(output_dir_delta, save_name)
+        
+        # Pass both paths to the processing function
+        process_single_action(in_path, save_path_abs=out_path_abs, save_path_delta=out_path_delta, cutoff=2.0, fs=30)
 
 # ==========================================
 # Main Execution
 # ==========================================
 if __name__ == "__main__":
-    # 请修改这里的路径为你的实际路径
-    #ENCODER_DIR = '/home/rm/Documents/MERLIN/training_data_check/encoder' 
-    #ACTION_DIR = '/home/rm/Documents/MERLIN/training_data_check/action'
-
-    ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder'
-    ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action'
+    ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/encoder'
+    ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/action'
     
     print("--- Starting Encoder Batch Processing ---")
     if os.path.exists(ENCODER_DIR):

@@ -22,18 +22,18 @@ from torch.cuda.amp import autocast, GradScaler
 # CONFIGURATION
 # ===========================================================================
 # 请确保这些路径指向你刚才生成的数据
-VID_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/camera/mp4_files'
-ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t'
-ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t'
-SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/syncs'
+VID_DIR = '/home/classysh/MERLIN/MERLIN/data/222data/camera/mp4_files'
+ENC_DIR = '/home/classysh/MERLIN/MERLIN/data/222data/encoder/processed_encoder_t'
+ACT_DIR = '/home/classysh/MERLIN/MERLIN/data/222data/action/processed_action_t'
+SYNC_DIR = '/home/classysh/MERLIN/MERLIN/data/222data/syncs'
 
 # ===========================================================================
 # ARGUMENTS
 # ===========================================================================
 parser = argparse.ArgumentParser(description="MERLIN Single-Cam 12D Training")
-parser.add_argument('-e', '--epochs', type=int, default=20000, help='number of epochs')
-parser.add_argument('-b', '--batch', type=int, default=10, help='batch size') # 显存够的话可以大一点
-parser.add_argument('-n', '--norm_path', type=str, default="normalization_stats_12d.npz", help='stats save path')
+parser.add_argument('-e', '--epochs', type=int, default=15000, help='number of epochs')
+parser.add_argument('-b', '--batch', type=int, default=16, help='batch size') # 显存够的话可以大一点
+parser.add_argument('-n', '--norm_path', type=str, default="normalization_stats_12d_222.npz", help='stats save path')
 parser.add_argument('-q', '--num_queries', type=int, default=70, help='chunk size')
 parser.add_argument('-lr', '--learning_rate', type=float, default=1e-5, help='learning rate')
 args = parser.parse_args()
@@ -41,7 +41,7 @@ args = parser.parse_args()
 # ===========================================================================
 # SETUP DEVICE
 # ===========================================================================
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:6" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
 # ===========================================================================
@@ -67,12 +67,12 @@ print(f"Normalization statistics saved to {args.norm_path}")
 
 # Split Train/Val
 n = len(dataset)
-train_len = int(0.95 * n)
+train_len = int(0.9 * n)
 test_len  = n - train_len
 train_dataset, test_dataset = random_split(dataset, [train_len, test_len])
 
-train_loader = DataLoader(train_dataset, batch_size=args.batch, shuffle=True, num_workers=4, pin_memory=True)
-val_loader   = DataLoader(test_dataset,   batch_size=args.batch, shuffle=False, num_workers=4, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=args.batch, shuffle=True, num_workers=2, pin_memory=True)
+val_loader   = DataLoader(test_dataset,   batch_size=args.batch, shuffle=False, num_workers=2, pin_memory=True)
 
 # Sanity Check (Optional)
 # batch_sanity_check(train_loader)
@@ -194,12 +194,12 @@ for epoch in range(args.epochs):
     
     # --- SAVE ---
     # 每 500 epoch 或在最后几个 epoch 频繁保存
-    if (epoch + 1) % 1000 == 0 and epoch > args.epochs - 10000:
-        save_path = f"weights/policy_epoch_{epoch+1}_218.pth"
+    if (epoch + 1) % 1000 == 0 and epoch > 4999:
+        save_path = f"weights/policy_epoch_{epoch+1}_222.pth"
         torch.save(model.state_dict(), save_path)
 
 # Final Save
-torch.save(model.state_dict(), "weights/policy_last_218.pth")
+torch.save(model.state_dict(), "weights/policy_last_222.pth")
 print("Training Complete. Weights saved.")
 
 # Plot Loss
@@ -211,4 +211,14 @@ plt.title('Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.legend()
-plt.savefig('loss_curve.png')
+plt.savefig('loss_curve_222.png')
+
+# save val_loss curve
+plt.figure()
+plt.plot(val_loss_history, label='Val L1', color='orange')
+plt.ylim(0, 3)
+plt.title('Validation Loss')
+plt.xlabel('Epoch (x10)')
+plt.ylabel('Loss')
+plt.legend()
+plt.savefig('val_loss_curve_222.png')

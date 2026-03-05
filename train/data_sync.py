@@ -102,7 +102,7 @@ def sync_data(npy_path, csv_path, txt_path):
             dropped_count += 1
             # 可选：打印为什么丢弃 (方便调试)
         
-            print(f"Frame {i_cam} dropped. Diff CSV: {diff_csv/1e9:.4f}s, Diff TXT: {diff_txt/1e9:.4f}s")
+            # print(f"Frame {i_cam} dropped. Diff CSV: {diff_csv/1e9:.4f}s, Diff TXT: {diff_txt/1e9:.4f}s")
 
     print(f"Sync Complete.")
     print(f"Total Video Frames: {len(master_times)}")

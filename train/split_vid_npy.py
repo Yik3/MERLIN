@@ -54,5 +54,5 @@ def organize_files(source_dir):
 
 if __name__ == "__main__":
 
-    target_dir = '../data/211data/camera'
+    target_dir = '../data/bottle/camera'
     organize_files(target_dir)

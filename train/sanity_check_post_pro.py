@@ -11,10 +11,10 @@ from scipy.spatial.transform import Rotation as R
 # ==========================================
 # 配置路径 (请修改)
 # ==========================================
-RAW_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder'
-RAW_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action'
-PROCESSED_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/encoder/processed_encoder_t'
-PROCESSED_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/211data/action/processed_action_t'
+RAW_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/encoder'
+RAW_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/action'
+PROCESSED_ENCODER_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/encoder/processed_encoder_t'
+PROCESSED_ACTION_DIR = '/home/classysh/MERLIN/MERLIN/data/bottle/action/processed_action_t'
 OUTPUT_DIR = './sanity_results' # 图片保存位置
 
 # ==========================================

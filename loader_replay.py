@@ -7,24 +7,35 @@ from Safety_Constraint import *
 import cv2
 # ================= CONFIGURATION =================
 # 请替换为你的实际文件路径
-ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260212013551.npy'
-ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260212_013544.npy'
-SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260212013552_sync.npz'
+ENC_NPY = '/home/rm/Documents/MERLIN/training_data_check/adc_data_20260222225811.npy'
+ACT_NPY = '/home/rm/Documents/MERLIN/training_data_check/iphone_data_20260222_225805.npy'
+SYNC_NPZ = '/home/rm/Documents/MERLIN/training_data_check/video_recording_realsense#20260222225812_sync.npz'
 SAVE_DIR = '/home/rm/Documents/MERLIN/replay_results'
 range_map = {
-    'CH0': (1286, 2400),
-    'CH1': (1413, 1840),
-    'CH2': (1900, 2883),
-    'CH3': (1902, 2742),
-    'CH4': (1750, 2700),
-    'CH5': (1970, 2667) 
+    'CH0': (1760, 2690), 
+    'CH1': (2075, 2720),
+    'CH2': (1188, 2060),
+    'CH3': (1290, 2190),
+    'CH4': (1240, 2045),
+    'CH5': (1260, 2050) 
+}
+monotonivity_map = {
+    'CH0': 0,  # Monotonically Decreasing
+    'CH1': 1,  # Monotonically Increasing
+    'CH2': 0,  # Monotonically Decreasing
+    'CH3': 0,  # Monotonically Decreasing
+    'CH4': 0,  # Monotonically Decreasing
+    'CH5': 0   # Monotonically Decreasing
 }
 IP = '169.254.128.19'
 ENABLE_ROBOT = True  # Set to True to actually move the robot
 RECORD_OBSERVATION = True  # Whether to record the camera observation during replay (for visualization)
 CAMERA_ID = 20
-FPS = 30
-BASE_POSE = [-0.298979, -0.303811, 0.263773, 2.023, -0.94, -0.021]
+FPS = 15
+# BASE_POSE = [-0.298979, -0.303811, 0.313773, 2.023, -0.94, -0.021]
+BASE_POSE = [-0.142258, -0.287446, 0.250924, 2.78, -1.105, -1.107]
+MAX_HAND_VAL = 65535
+MAX_VAL = 65535
 # =================================================
 
 def smooth_data(data, window=8):
@@ -40,18 +51,23 @@ def smooth_data(data, window=8):
         smoothed[:, dim] = moving_sum / kernel_size
     return smoothed
 
-def map_encoder_to_motor(encoder_vals, gain = 0.78):
+def map_encoder_to_motor(encoder_vals, gain = 0.9):
     motor_vals = []
     for i in range(6):
         ch_name = f'CH{i}'
         if ch_name in range_map:
             min_val, max_val = range_map[ch_name]
             # 线性映射
-            mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL/ (max_val - min_val)
+            if monotonivity_map[ch_name] == 0:  # Monotonically Decreasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (max_val - encoder_vals[i]) * MAX_VAL / (max_val - min_val)
+            else:  # Monotonically Increasing
+                encoder_vals[i] = max(min(encoder_vals[i], max_val), min_val)  # Clip to range
+                mapped_val = gain * (encoder_vals[i] - min_val) * MAX_VAL / (max_val - min_val)
             motor_vals.append(int(mapped_val))
         else:
             motor_vals.append(0)  # Default to 0 if no mapping defined
-    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[3], motor_vals[4], motor_vals[5], motor_vals[0]]
+    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
     return ret_motor_vals
 
 def main():
@@ -132,8 +148,8 @@ def main():
         # --- B. Compute Target Arm Pose ---
         # Target = Base + Relative_Trajectory[idx]
         rel_pose = relative_trajectory[p_idx]
-        rel_pose[0] *= -1
-        rel_pose[4] *= -1
+        #rel_pose[0] *= -1
+        #rel_pose[4] *= -1
         target_pose = [0.0] * 6
         gain = 1.0
         for j in range(6):
@@ -162,6 +178,8 @@ def main():
                 ret, frame = cap.read()
                 if ret:
                     # Save as mp4 video
+                    frame = cv2.flip(frame, 1)  # Flip horizontally if needed
+                    frame = cv2.flip(frame, 0)  # Flip vertically if needed
                     out.write(frame)
                     # show in real-time
                     cv2.imshow("Replay Observation", frame)
@@ -171,9 +189,14 @@ def main():
                 else:
                     continue
             # Send Arm
-            robot.move_arm_to_pose(target_pose, speed=20)  # Adjust speed as needed
+            robot.move_arm_to_pose(target_pose, speed=50)  # Adjust speed as needed
             # Send Hand
-            target_hand[0] -= 10000
+            target_hand[5] += 10000
+            target_hand[0] += 25000
+            if target_hand[5] > MAX_HAND_VAL:
+                target_hand[5] = MAX_HAND_VAL
+            if target_hand[0] > MAX_HAND_VAL:
+                target_hand[0] = MAX_HAND_VAL
             robot.set_hand_position(target_hand) # 取消注释以启用手部
 
 
@@ -225,7 +248,7 @@ def main():
 
     # Plot 3: Hand
     plt.figure(figsize=(10, 6))
-    finger_names = ['ThumbLow', 'ThumbUp', 'Pointer', 'Middle', 'Ring', 'Pinky']
+    finger_names = ['ThumbUp', 'Pointer', 'Middle', 'Ring', 'Pinky', 'ThumbLow']
     for k in range(6):
         plt.plot(t_steps, rec_hand[:, k], label=finger_names[k])
     plt.title("Robot Hand Commands")

@@ -10,24 +10,23 @@ GPU_IP = "192.168.1.100"
 ZMQ_PORT = 5555
 
 ROBOT_IP = "169.254.128.19"
-CAMERA_ID = 20
+CAMERA_ID = 20 # was 20
 
 # BASE_POSE (保持原样)
 # BASE_POSE = [-0.259968, -0.253127, 0.265704, 1.89, -0.996, -0.185]
 # BASE_POSE = [-0.208566, -0.359196, 0.335435, 2.265, -0.727, -0.67]
-# BASE_POSE = [-0.227348, -0.351303, 0.262927, 2.937, -1.085, -1.233]
-BASE_POSE = [-0.142258, -0.257446, 0.250924, 2.78, -1.105, -1.107]
+BASE_POSE = [-0.231126, -0.357405, 0.274843, 2.946, -1.137, -1.247]
 
 # 手部映射参数
 MAX_HAND_VAL = 65535
 MAX_VAL = 65535
 range_map = {
-    'CH0': (1640, 2750), 
-    'CH1': (2050, 2500),
-    'CH2': (1100, 2037),
-    'CH3': (1235, 2060),
-    'CH4': (1235, 2200),
-    'CH5': (1240, 2130) 
+    'CH0': (1780, 2690), 
+    'CH1': (2075, 2720),
+    'CH2': (1188, 2060),
+    'CH3': (1290, 2190),
+    'CH4': (1240, 2045),
+    'CH5': (1260, 2050) 
 }
 monotonivity_map = {
     'CH0': 0,  # Monotonically Decreasing
@@ -54,7 +53,7 @@ def map_encoder_to_motor(encoder_vals, gain = 1.0):
             motor_vals.append(int(mapped_val))
         else:
             motor_vals.append(0)  # Default to 0 if no mapping defined
-    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[4], motor_vals[3], motor_vals[5], motor_vals[0]]
+    ret_motor_vals = [motor_vals[1], motor_vals[2], motor_vals[3], motor_vals[4], motor_vals[5], motor_vals[0]]
     return ret_motor_vals
 
 def get_compressed_image(cap):
@@ -136,16 +135,14 @@ def main():
             cmd_hand = map_encoder_to_motor(raw_hand_enc)
             
             # --- D. Execute Command (Blocking) ---
-            cmd_hand[0] *= 2
-            cmd_hand[0] += 10000
+            cmd_hand[0] *= 1.5
             cmd_hand[0] = min(cmd_hand[0], MAX_HAND_VAL)
-            cmd_hand[4] *= 0.85
             # cmd_hand[1] *= 1.2
             # cmd_hand[1] = min(cmd_hand[1], MAX_HAND_VAL)
             # cmd_hand[2] *= 1.2
             # cmd_hand[2] = min(cmd_hand[2], MAX_HAND_VAL)
             robot.set_hand_position(cmd_hand)
-            robot.move_arm_to_pose(next_target_pose, speed=100, block=True)
+            robot.move_arm_to_pose(next_target_pose, speed=30, block=True)
             time.sleep(0.003) # Ensure completion
             
             # --- E. Update Internal State ---
